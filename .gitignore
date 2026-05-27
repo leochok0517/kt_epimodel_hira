@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+uv.lock
+.python-version
+
+# Notebooks
+.ipynb_checkpoints/
+
+# Output
+outputs/
+!outputs/.gitkeep
+
+# IDE
+.vscode/
+.idea/
+.claude/
+
+# Test cache
+.pytest_cache/
+
+# OS
+.DS_Store
