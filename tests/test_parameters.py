@@ -26,8 +26,8 @@ def test_disease_defaults() -> None:
     assert d.gamma == 0.25
     assert d.latent_period == 2.0
     assert d.infectious_period == 4.0
-    assert d.seasonality_amp == 1.0
-    assert d.seasonality_peak_day == 130.0
+    assert d.seasonality_amp == 0.7
+    assert d.seasonality_peak_day == 105.0
 
 
 def test_disease_kappa_length() -> None:
@@ -98,12 +98,12 @@ def test_disease_invalid_amp_raises() -> None:
 
 def test_disease_seasonality_base_default() -> None:
     d = DiseaseParameters()
-    assert d.seasonality_base == 0.1
+    assert d.seasonality_base == 1.0
 
 
-def test_disease_default_mode_gaussian() -> None:
+def test_disease_default_mode_cosine() -> None:
     d = DiseaseParameters()
-    assert d.seasonality_mode == "gaussian"
+    assert d.seasonality_mode == "cosine"
     assert d.seasonality_sigma == 40.0
 
 
@@ -221,29 +221,48 @@ def test_calibration_negative_beta_raises() -> None:
         CalibrationParameters(beta_w=float("nan"))
 
 
-def test_calibration_invalid_gamma_report_raises() -> None:
+def test_calibration_gamma_defaults() -> None:
+    c = CalibrationParameters()
+    assert c.gamma_child == 0.40
+    assert c.gamma_adult == 0.18
+    assert c.gamma_elder == 0.25
+
+
+def test_calibration_gamma_15_shape_and_values() -> None:
+    c = CalibrationParameters(gamma_child=0.4, gamma_adult=0.2, gamma_elder=0.3)
+    g = c.gamma_15
+    assert g.shape == (15,)
+    np.testing.assert_allclose(g[:4], 0.4)
+    np.testing.assert_allclose(g[4:13], 0.2)
+    np.testing.assert_allclose(g[13:], 0.3)
+
+
+def test_calibration_invalid_gamma_raises() -> None:
     with pytest.raises(ValueError):
-        CalibrationParameters(gamma_report=0.0)
+        CalibrationParameters(gamma_child=0.0)
     with pytest.raises(ValueError):
-        CalibrationParameters(gamma_report=1.5)
+        CalibrationParameters(gamma_adult=1.5)
+    with pytest.raises(ValueError):
+        CalibrationParameters(gamma_elder=-0.1)
 
 
 def test_calibration_reference_normalization_4_betas() -> None:
     phi = np.linspace(0.5, 2.0, 15)
     c = CalibrationParameters(
         beta_h=0.1, beta_w=0.2, beta_s=0.3, beta_o=0.4,
-        phi=phi, gamma_report=0.5,
+        phi=phi, gamma_child=0.4, gamma_adult=0.2, gamma_elder=0.3,
     )
     c2 = c.with_reference_normalized()
-    # φ[ref] = 1
     assert c2.phi[REF_AGE_IDX] == pytest.approx(1.0)
-    # β·φ 곱 보존 (각 채널)
     ratio = phi[REF_AGE_IDX]
     assert c2.beta_h == pytest.approx(c.beta_h * ratio)
     assert c2.beta_w == pytest.approx(c.beta_w * ratio)
     assert c2.beta_s == pytest.approx(c.beta_s * ratio)
     assert c2.beta_o == pytest.approx(c.beta_o * ratio)
     np.testing.assert_allclose(c2.beta_h * c2.phi, c.beta_h * c.phi, rtol=1e-12)
+    assert c2.gamma_child == c.gamma_child
+    assert c2.gamma_adult == c.gamma_adult
+    assert c2.gamma_elder == c.gamma_elder
 
 
 # ---------- PolicyParameters ----------

@@ -1,19 +1,18 @@
-"""ModelParameters ↔ 1D vector 변환 (optimizer 용).
+"""CalibrationParameters <-> 1D vector (optimizer).
 
-Vector layout (23 elements):
+Vector layout (21 elements):
     [0]  beta_h
     [1]  beta_w
     [2]  beta_s
     [3]  beta_o
-    [4..17]  phi_a (a in {0..14} \\ {5})  — phi_5 (25-29) 제외
-    [18] gamma_report
-    [19] seasonality_amp
-    [20] seasonality_base
-    [21] seasonality_sigma
-    [22] seasonality_peak_day
+    [4..17]  phi_a (a in {0..14} \\ {5})  — phi_5 (25-29) excluded
+    [18] gamma_child   (NIMS 0-3, age 0-19)
+    [19] gamma_adult   (NIMS 4-12, age 20-64)
+    [20] gamma_elder   (NIMS 13-14, age 65+)
 
 phi[5] = 1.0 reference.
-seasonality_mode, period 는 vector 외 (caller 보존).
+Seasonality fixed (cosine, amp=0.7, peak=105).
+See docs/AGE_DEPENDENT_GAMMA.md for gamma rationale.
 """
 
 from __future__ import annotations
@@ -22,39 +21,23 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from kt_epimodel_hira.model.parameters import (
-    CalibrationParameters,
-    DiseaseParameters,
-)
+from kt_epimodel_hira.model.parameters import CalibrationParameters
 
 N_AGE: int = 15
 REF_AGE_IDX: int = 5
-N_VECTOR: int = 23
+N_VECTOR: int = 21
 
 
 @dataclass
 class ParameterBounds:
-    """파라미터별 (lower, upper) 경계.
-
-    Phase A rollback: 이전 tightening 이 새 corner solution (β·φ floor) 을 만들어,
-    fit 영역을 다시 넓힌다.
-    """
     beta_h: tuple[float, float] = (0.001, 5.0)
     beta_w: tuple[float, float] = (0.001, 5.0)
     beta_s: tuple[float, float] = (0.001, 5.0)
     beta_o: tuple[float, float] = (0.001, 5.0)
     phi: tuple[float, float] = (0.1, 5.0)
-    # TODO HIRA-B: gamma_report bound 좁히기 검토 — 권장 (0.05, 0.5).
-    # 근거: HIRA 에서는 분모가 인구로 깨끗해져 의미가 "reporting fraction"
-    # (감염자 중 진료 청구된 비율) 으로 단순화. ILI 의 (0.01, 1.0) 은 너무 넓음.
-    # 상한 0.5: 청구가 실제 감염의 ≥ 50% 라는 가정 비현실 → 차단.
-    # 하한 0.05: 그 이하면 다른 시즌으로 sanity check 필요.
-    # 1차 fit 후 박힘 여부 보고 결정. 현재는 ILI 와 동일 (0.01, 1.0) 유지.
-    gamma_report: tuple[float, float] = (0.01, 1.0)
-    seasonality_amp: tuple[float, float] = (0.0, 3.0)
-    seasonality_base: tuple[float, float] = (0.0, 1.0)
-    seasonality_sigma: tuple[float, float] = (15.0, 80.0)
-    seasonality_peak_day: tuple[float, float] = (80.0, 150.0)
+    gamma_child: tuple[float, float] = (0.05, 0.60)
+    gamma_adult: tuple[float, float] = (0.05, 0.60)
+    gamma_elder: tuple[float, float] = (0.05, 0.60)
 
 
 def get_param_names() -> list[str]:
@@ -63,20 +46,11 @@ def get_param_names() -> list[str]:
         if a == REF_AGE_IDX:
             continue
         names.append(f"phi_{a}")
-    names.append("gamma_report")
-    names.append("seasonality_amp")
-    names.append("seasonality_base")
-    names.append("seasonality_sigma")
-    names.append("seasonality_peak_day")
+    names.extend(["gamma_child", "gamma_adult", "gamma_elder"])
     return names
 
 
-def params_to_vector(
-    calibration: CalibrationParameters,
-    disease: DiseaseParameters | None = None,
-) -> np.ndarray:
-    if disease is None:
-        disease = DiseaseParameters()
+def params_to_vector(calibration: CalibrationParameters) -> np.ndarray:
     vec = np.zeros(N_VECTOR, dtype=np.float64)
     vec[0] = calibration.beta_h
     vec[1] = calibration.beta_w
@@ -88,18 +62,14 @@ def params_to_vector(
             continue
         vec[idx] = calibration.phi[a]
         idx += 1
-    vec[18] = calibration.gamma_report
-    vec[19] = disease.seasonality_amp
-    vec[20] = disease.seasonality_base
-    vec[21] = disease.seasonality_sigma
-    vec[22] = disease.seasonality_peak_day
+    vec[18] = calibration.gamma_child
+    vec[19] = calibration.gamma_adult
+    vec[20] = calibration.gamma_elder
     return vec
 
 
-def vector_to_params(
-    vec: np.ndarray,
-) -> tuple[CalibrationParameters, float, float, float, float]:
-    """(23,) → (CalibrationParameters, amp, base, sigma, peak_day)."""
+def vector_to_params(vec: np.ndarray) -> CalibrationParameters:
+    """(21,) -> CalibrationParameters."""
     if vec.shape != (N_VECTOR,):
         raise ValueError(f"vec shape must be ({N_VECTOR},), got {vec.shape}")
 
@@ -111,15 +81,16 @@ def vector_to_params(
         phi[a] = vec[idx]
         idx += 1
 
-    cal = CalibrationParameters(
+    return CalibrationParameters(
         beta_h=float(vec[0]),
         beta_w=float(vec[1]),
         beta_s=float(vec[2]),
         beta_o=float(vec[3]),
         phi=phi,
-        gamma_report=float(vec[18]),
+        gamma_child=float(vec[18]),
+        gamma_adult=float(vec[19]),
+        gamma_elder=float(vec[20]),
     )
-    return cal, float(vec[19]), float(vec[20]), float(vec[21]), float(vec[22])
 
 
 def get_bounds_vector(
@@ -134,42 +105,26 @@ def get_bounds_vector(
         if a == REF_AGE_IDX:
             continue
         out.append(bounds.phi)
-    out.append(bounds.gamma_report)
-    out.append(bounds.seasonality_amp)
-    out.append(bounds.seasonality_base)
-    out.append(bounds.seasonality_sigma)
-    out.append(bounds.seasonality_peak_day)
+    out.extend([bounds.gamma_child, bounds.gamma_adult, bounds.gamma_elder])
     return out
 
 
 def initial_guess(
     base_calibration: CalibrationParameters | None = None,
-    base_disease: DiseaseParameters | None = None,
 ) -> np.ndarray:
     if base_calibration is None:
         base_calibration = CalibrationParameters()
-    if base_disease is None:
-        # ILI peak ~ week 16-18 day 112-126. peak_day 110 으로 약간 앞당김.
-        base_disease = DiseaseParameters(seasonality_peak_day=110.0)
-    return params_to_vector(base_calibration, base_disease)
+    return params_to_vector(base_calibration)
 
-
-# ---------------------------------------------------------------------------
-# Demo
-# ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
     cal = CalibrationParameters()
-    dis = DiseaseParameters()
-    vec = params_to_vector(cal, dis)
+    vec = params_to_vector(cal)
     print(f"N_VECTOR: {N_VECTOR}, vec shape: {vec.shape}")
-    print(f"Names (last 5): {get_param_names()[-5:]}")
+    print(f"Names: {get_param_names()}")
     print(f"Vector: {vec}")
 
-    cal2, amp2, base2, sigma2, peak2 = vector_to_params(vec)
-    print(f"\nRound-trip phi[5]:  {cal2.phi[5]}")
-    print(f"  amp:      {amp2}")
-    print(f"  base:     {base2}")
-    print(f"  sigma:    {sigma2}")
-    print(f"  peak_day: {peak2}")
+    cal2 = vector_to_params(vec)
+    print(f"\nRound-trip gamma: child={cal2.gamma_child} adult={cal2.gamma_adult} "
+          f"elder={cal2.gamma_elder}")
     print(f"Bounds length: {len(get_bounds_vector())}")

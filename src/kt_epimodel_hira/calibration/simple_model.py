@@ -99,12 +99,12 @@ def estimate_initial_infected_from_hira(
     sido_codes: list[int] | None = None,
     setting: str = "outpatient_inpatient",
     week_zero_average_n: int = 3,
-    gamma_report_assumed: float = 0.2,
+    gamma_report_assumed: float | None = None,
+    gamma_15_assumed: np.ndarray | None = None,
 ) -> np.ndarray:
     """HIRA 시즌 초반 baseline 으로 NIMS 15군 초기 I 추정.
 
-    수식 (ILI 버전과 차이): ``I = hira_baseline_count / γ_assumed``
-        - per-1000 곱셈 / 인구 분모 제거 (카운트 단위).
+    수식: ``I = hira_baseline_count / gamma_assumed``
 
     Args:
         season: '2019-2020' 등.
@@ -112,26 +112,24 @@ def estimate_initial_infected_from_hira(
         sido_codes: HIRA 시도 필터. None 이면 수도권 3 시도.
         setting: 'outpatient_inpatient' or 'inpatient_only'.
         week_zero_average_n: 처음 N 주 평균 (단일 주 노이즈 회피).
-        gamma_report_assumed: HIRA reporting fraction 가정값.
-
-            **default 0.2 근거 (수도권 2019-2020):**
-              - 수도권 인구 ≈ 2,600만
-              - 시즌 HIRA 에피소드 (수도권) ≈ 82만
-              - 가정 attack rate 10-20% → 실제 감염 260-520만
-              - reporting fraction ≈ 82만 / (260-520만) = 0.16-0.32
-              - 중간값 ≈ 0.2 채택.
-
-            **TODO HIRA-C**: 1차 fit 후 corner solution 진단 결과 보고 조정.
-            ILI 버전 default 2.0 과 자릿수 다름 — ILI 는 per-1000 단위환산 +
-            보고율 + 외래/인구 비율 곱셈 누적, HIRA 는 분모 깨끗해서 < 1.
+        gamma_report_assumed: scalar fallback (deprecated, use gamma_15_assumed).
+        gamma_15_assumed: (15,) age-dependent gamma. Takes priority.
+            If neither given, uses CalibrationParameters defaults.
 
     Returns:
         (15,) — 연령별 초기 I 인원수.
     """
-    if gamma_report_assumed <= 0:
-        raise ValueError(
-            f"gamma_report_assumed must be > 0, got {gamma_report_assumed}"
-        )
+    from kt_epimodel_hira.model.parameters import CalibrationParameters
+
+    if gamma_15_assumed is not None:
+        gamma_15 = np.asarray(gamma_15_assumed, dtype=np.float64)
+    elif gamma_report_assumed is not None:
+        gamma_15 = np.full(15, gamma_report_assumed, dtype=np.float64)
+    else:
+        gamma_15 = CalibrationParameters().gamma_15
+
+    if (gamma_15 <= 0).any():
+        raise ValueError(f"gamma values must be > 0, got min={gamma_15.min()}")
 
     from kt_data.data.load_hira import (
         SUDOGWON_SIDO_CODES,
@@ -174,7 +172,7 @@ def estimate_initial_infected_from_hira(
             counts = sub["episodes"].to_numpy().astype(np.float64)
             hira_baseline[ag] = float(np.nanmean(counts))
 
-    # I = baseline_count / γ_assumed, 그룹 내 인구비례로 NIMS 15군에 분배
+    # I = baseline_count / gamma_weighted, distributed by pop within HIRA group
     I_initial_15 = np.zeros(15, dtype=np.float64)
     for ag, weights in HIRA_GROUP_TO_NIMS_WEIGHTED.items():
         total_weighted_pop = sum(
@@ -182,7 +180,13 @@ def estimate_initial_infected_from_hira(
         )
         if total_weighted_pop < 1e-10:
             continue
-        I_group = hira_baseline[ag] / gamma_report_assumed
+        # Weighted average gamma for this HIRA group
+        gamma_avg = sum(
+            w * float(pop_total_15[idx]) * float(gamma_15[idx])
+            for idx, w in weights.items()
+        ) / total_weighted_pop
+        gamma_avg = max(gamma_avg, 1e-10)
+        I_group = hira_baseline[ag] / gamma_avg
         for nims_idx, w in weights.items():
             share = (w * float(pop_total_15[nims_idx])) / total_weighted_pop
             I_initial_15[nims_idx] += I_group * share
@@ -193,17 +197,36 @@ def estimate_initial_infected_from_hira(
 # Initial state + simulate — ILI 버전 그대로 (target 무관)
 # ---------------------------------------------------------------------------
 
+# Age-specific initial immunity profile R(0) — step function.
+# Derived from POLYMOD contact accumulation (Mossong et al. 2008) and elderly
+# cross-reactive immunity from past pandemics (Vandegrift et al. 2014).
+# See docs/PRIOR_SPECIFICATION.md Appendix A for full rationale.
+R0_IMMUNITY_PROFILE: np.ndarray = np.array(
+    [0.10] * 4    # 0-19   children: limited prior exposure
+    + [0.30] * 6  # 20-49  young/middle adults: baseline accumulated
+    + [0.45] * 3  # 50-64  middle-aged: routine vax + accumulation
+    + [0.65] * 2, # 65+    elderly: vax (82%) + cross-immunity
+    dtype=np.float64,
+)
+assert R0_IMMUNITY_PROFILE.shape == (15,), \
+    f"R0_IMMUNITY_PROFILE must be (15,), got {R0_IMMUNITY_PROFILE.shape}"
+
+
 def _build_initial_state_with_age_seed(
     pop_15: np.ndarray,
     seed_by_age: np.ndarray,
     seed_e_factor: float,
-    initial_immunity: float,
-    initial_vaccinated_fraction: float,
+    initial_immunity,
+    initial_vaccinated_fraction,
 ) -> np.ndarray:
     """연령별 seed 로 SEIRV 초기 state 직접 구성.
 
     상태 텐서: (5, 15, n_admdong). 행정동 분배는 인구 비례.
-    (ILI 버전과 동일 — seed 벡터 받아 처리만 함)
+
+    Args:
+        initial_immunity: scalar (uniform R(0)) or (15,) array (age-specific).
+            Scalar accepted for backward compat with existing code.
+        initial_vaccinated_fraction: scalar or (15,) array.
     """
     pop_arr = np.asarray(pop_15, dtype=np.float64)
     if pop_arr.ndim == 1:
@@ -218,6 +241,20 @@ def _build_initial_state_with_age_seed(
     if (seed < 0).any():
         raise ValueError("seed_by_age must be nonneg")
 
+    # Broadcast scalar -> (15,) for backward compat; pass-through (15,) arrays
+    imm = np.broadcast_to(
+        np.asarray(initial_immunity, dtype=np.float64), (n_age,)
+    )
+    vac = np.broadcast_to(
+        np.asarray(initial_vaccinated_fraction, dtype=np.float64), (n_age,)
+    )
+    if (imm < 0).any() or (imm >= 1).any():
+        raise ValueError(f"initial_immunity must be in [0, 1), got {imm}")
+    if (vac < 0).any() or (vac >= 1).any():
+        raise ValueError(f"initial_vaccinated_fraction in [0, 1), got {vac}")
+    if (imm + vac >= 1).any():
+        raise ValueError("initial_immunity + initial_vaccinated_fraction must be < 1 per age")
+
     state = np.zeros((N_COMPARTMENTS, n_age, n_adm), dtype=np.float64)
     for a in range(n_age):
         row = pop_2d[a]
@@ -228,8 +265,8 @@ def _build_initial_state_with_age_seed(
 
         i_seed = float(seed[a])
         e_seed = i_seed * float(seed_e_factor)
-        r_init = float(initial_immunity) * n_a
-        v_init = float(initial_vaccinated_fraction) * n_a
+        r_init = float(imm[a]) * n_a
+        v_init = float(vac[a]) * n_a
         s_init = n_a - i_seed - e_seed - r_init - v_init
         if s_init < 0:
             avail = max(n_a - r_init - v_init, 0.0)
@@ -257,8 +294,8 @@ def simulate_aggregated(
     seed_total: float = 100.0,
     seed_by_age: np.ndarray | None = None,
     seed_e_factor: float = 0.5,
-    initial_immunity: float = 0.0,
-    initial_vaccinated_fraction: float = 0.0,
+    initial_immunity=0.0,
+    initial_vaccinated_fraction=0.0,
     t_span: tuple[float, float] = (0.0, 224.0),
     day_in_season_offset: float = 0.0,
 ) -> SimulationResult:

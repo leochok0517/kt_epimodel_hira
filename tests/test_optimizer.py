@@ -35,7 +35,7 @@ def test_resolve_initial_vec_default_uses_initial_guess() -> None:
 
 
 def test_resolve_initial_vec_explicit() -> None:
-    custom = np.full(23, 0.1)
+    custom = np.full(21, 0.1)
     custom[18] = 0.3
     vec = _resolve_initial_vec(custom, None)
     np.testing.assert_array_equal(vec, custom)
@@ -51,9 +51,9 @@ def test_resolve_initial_vec_warm_start_clips_to_bounds() -> None:
     fake = CalibrationResult(
         season="dummy", method="L-BFGS-B", success=True, nll=0.0, nll_initial=0.0,
         calibration=base_cal,
-        seasonality_amp=0.0, seasonality_base=1.0,
-        seasonality_sigma=40.0, seasonality_peak_day=110.0,
-        seasonality_mode="gaussian",
+        seasonality_amp=0.7, seasonality_base=0.0,
+        seasonality_sigma=40.0, seasonality_peak_day=105.0,
+        seasonality_mode="cosine",
         vector=initial_guess().copy(),
         n_evaluations=0, elapsed_seconds=0.0, message="",
         seed_total=100.0, initial_immunity=0.0, initial_vaccinated_fraction=0.0,
@@ -73,9 +73,9 @@ def test_resolve_initial_vec_conflict_raises() -> None:
     fake = CalibrationResult(
         season="d", method="L-BFGS-B", success=True, nll=0.0, nll_initial=0.0,
         calibration=CalibrationParameters(),
-        seasonality_amp=0.0, seasonality_base=1.0,
-        seasonality_sigma=40.0, seasonality_peak_day=110.0,
-        seasonality_mode="gaussian",
+        seasonality_amp=0.7, seasonality_base=0.0,
+        seasonality_sigma=40.0, seasonality_peak_day=105.0,
+        seasonality_mode="cosine",
         vector=initial_guess().copy(),
         n_evaluations=0, elapsed_seconds=0.0, message="",
         seed_total=100.0, initial_immunity=0.0, initial_vaccinated_fraction=0.0,
@@ -91,7 +91,8 @@ def test_save_load_roundtrip(tmp_path: Path) -> None:
     from kt_epimodel_hira.calibration.param_vector import initial_guess
     cal = CalibrationParameters(
         beta_h=0.5, beta_w=0.3, beta_s=0.7, beta_o=0.2,
-        phi=np.linspace(0.2, 2.0, 15), gamma_report=0.25,
+        phi=np.linspace(0.2, 2.0, 15),
+        gamma_child=0.45, gamma_adult=0.15, gamma_elder=0.30,
     )
     original = CalibrationResult(
         season="2019-2020_by_age",
@@ -100,11 +101,11 @@ def test_save_load_roundtrip(tmp_path: Path) -> None:
         nll=-123.45,
         nll_initial=999.99,
         calibration=cal,
-        seasonality_amp=0.15,
-        seasonality_base=0.1,
-        seasonality_sigma=20.0,
-        seasonality_peak_day=140.0,
-        seasonality_mode="gaussian",
+        seasonality_amp=0.7,
+        seasonality_base=0.0,
+        seasonality_sigma=40.0,
+        seasonality_peak_day=105.0,
+        seasonality_mode="cosine",
         vector=initial_guess().copy(),
         n_evaluations=1234,
         elapsed_seconds=300.0,
@@ -131,7 +132,9 @@ def test_save_load_roundtrip(tmp_path: Path) -> None:
     assert loaded.first_peak_only is True
     np.testing.assert_array_equal(loaded.vector, original.vector)
     np.testing.assert_array_equal(loaded.calibration.phi, cal.phi)
-    assert loaded.calibration.gamma_report == 0.25
+    assert loaded.calibration.gamma_child == 0.45
+    assert loaded.calibration.gamma_adult == 0.15
+    assert loaded.calibration.gamma_elder == 0.30
 
 
 def test_save_creates_parent_directory(tmp_path: Path) -> None:
@@ -140,9 +143,9 @@ def test_save_creates_parent_directory(tmp_path: Path) -> None:
     original = CalibrationResult(
         season="d", method="L-BFGS-B", success=True, nll=0.0, nll_initial=0.0,
         calibration=CalibrationParameters(),
-        seasonality_amp=0.0, seasonality_base=1.0,
-        seasonality_sigma=40.0, seasonality_peak_day=110.0,
-        seasonality_mode="gaussian",
+        seasonality_amp=0.7, seasonality_base=0.0,
+        seasonality_sigma=40.0, seasonality_peak_day=105.0,
+        seasonality_mode="cosine",
         vector=initial_guess().copy(),
         n_evaluations=0, elapsed_seconds=0.0, message="",
         seed_total=100.0, initial_immunity=0.0, initial_vaccinated_fraction=0.0,

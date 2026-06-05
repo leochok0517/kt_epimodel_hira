@@ -23,3 +23,5 @@ outputs/
 
 # OS
 .DS_Store
+outputs/mlruns/
+outputs/mlruns/mlflow.db

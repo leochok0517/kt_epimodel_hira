@@ -108,10 +108,15 @@ def run_simulation(
     t_eval: np.ndarray | None = None,
     day_in_season_offset: float = 0.0,
     method: str = "RK45",
-    rtol: float = 1e-6,
-    atol: float = 1e-8,
+    rtol: float = 1e-4,
+    atol: float = 1e-6,
 ) -> SimulationResult:
-    """시간 불변 mobility/matrices SEIRV 시뮬레이션."""
+    """시간 불변 mobility/matrices SEIRV 시뮬레이션.
+
+    rtol/atol defaults relaxed from 1e-6/1e-8 to 1e-4/1e-6 after
+    verification: NLL rel diff < 0.002%, prediction rel diff < 1%,
+    ~5.8x speedup in 4-season multi-start fits.
+    """
     n_admdong = initial_state_arr.shape[2]
     if t_eval is None:
         t_eval = np.arange(t_span[0], t_span[1] + 1, 1.0)
@@ -142,8 +147,8 @@ def run_simulation_time_varying(
     start_date: int,
     n_days: int = 224,
     method: str = "RK45",
-    rtol: float = 1e-6,
-    atol: float = 1e-8,
+    rtol: float = 1e-4,
+    atol: float = 1e-6,
 ) -> SimulationResult:
     """daytype 가변 시뮬레이션."""
     n_admdong = initial_state_arr.shape[2]

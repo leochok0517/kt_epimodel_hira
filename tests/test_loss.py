@@ -55,7 +55,7 @@ def test_loss_deterministic_single() -> None:
     loss = make_loss_function(target, _setup()["inputs"], ModelParameters())
     vec = initial_guess()
     v1, v2 = loss(vec), loss(vec)
-    assert v1 == v2
+    np.testing.assert_allclose(v1, v2, rtol=1e-10)
 
 
 @requires_file

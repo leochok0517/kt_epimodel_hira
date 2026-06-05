@@ -48,12 +48,13 @@ class DiseaseParameters:
     gamma: float = 0.25
     kappa: tuple[float, ...] = _DEFAULT_KAPPA
     # 환경 시즌성 (cosine factor on β)
-    seasonality_mode: str = "gaussian"   # 'gaussian' or 'cosine'
-    seasonality_amp: float = 1.0        # peak 추가량
-    seasonality_base: float = 0.1        # baseline (off-season factor)
-    seasonality_peak_day: float = 130.0  # 정점 day — ≈ 1월 중순
-    seasonality_period: float = 365.0    # cosine 주기 (gaussian 모드선 무시)
-    seasonality_sigma: float = 40.0      # gaussian σ (days)
+    # Cosine seasonality (fixed, not fit). Identifiability: beta * sf 곱셈 결합.
+    seasonality_mode: str = "cosine"
+    seasonality_amp: float = 0.7         # cosine amplitude (fixed)
+    seasonality_base: float = 1.0        # sf(t) = base + amp*cos(...) → 1 + 0.7*cos
+    seasonality_peak_day: float = 105.0  # peak day (t=0 기준, ~12월 중하순)
+    seasonality_period: float = 365.0
+    seasonality_sigma: float = 40.0      # gaussian only (unused in cosine)
 
     def __post_init__(self) -> None:
         for name in ("sigma", "gamma"):
@@ -126,19 +127,28 @@ class DiseaseParameters:
 # CalibrationParameters
 # ---------------------------------------------------------------------------
 
+GAMMA_AGE_GROUPS: dict[str, list[int]] = {
+    "child": [0, 1, 2, 3],
+    "adult": [4, 5, 6, 7, 8, 9, 10, 11, 12],
+    "elder": [13, 14],
+}
+
+
 @dataclass
 class CalibrationParameters:
-    """4 채널 β + 연령별 susceptibility φ + 보고율 γ_report.
+    """4 채널 β + 연령별 susceptibility φ + age-dependent γ_report.
 
-    β_h, β_w, β_s, β_o: home, work, school, other 채널의 transmission rate.
-    Calibration 에서 fit 대상.
+    gamma_child/adult/elder: reporting fraction by age group.
+    See docs/AGE_DEPENDENT_GAMMA.md for rationale.
     """
     beta_h: float = 0.05
     beta_w: float = 0.05
     beta_s: float = 0.05
     beta_o: float = 0.05
     phi: np.ndarray = field(default_factory=lambda: np.ones(N_AGE))
-    gamma_report: float = 0.5
+    gamma_child: float = 0.40
+    gamma_adult: float = 0.18
+    gamma_elder: float = 0.25
 
     def __post_init__(self) -> None:
         self.phi = np.asarray(self.phi, dtype=np.float64)
@@ -150,8 +160,22 @@ class CalibrationParameters:
             v = getattr(self, name)
             if not np.isfinite(v) or v < 0:
                 raise ValueError(f"{name} must be non-negative finite, got {v}")
-        if not (0 < self.gamma_report <= 1):
-            raise ValueError(f"gamma_report must be in (0, 1], got {self.gamma_report}")
+        for name in ("gamma_child", "gamma_adult", "gamma_elder"):
+            v = getattr(self, name)
+            if not (0 < v <= 1):
+                raise ValueError(f"{name} must be in (0, 1], got {v}")
+
+    @property
+    def gamma_15(self) -> np.ndarray:
+        """NIMS 15-group gamma_report vector."""
+        g = np.zeros(N_AGE, dtype=np.float64)
+        for idx in GAMMA_AGE_GROUPS["child"]:
+            g[idx] = self.gamma_child
+        for idx in GAMMA_AGE_GROUPS["adult"]:
+            g[idx] = self.gamma_adult
+        for idx in GAMMA_AGE_GROUPS["elder"]:
+            g[idx] = self.gamma_elder
+        return g
 
     @property
     def betas(self) -> dict[str, float]:
@@ -173,7 +197,9 @@ class CalibrationParameters:
             beta_s=self.beta_s * ratio,
             beta_o=self.beta_o * ratio,
             phi=self.phi / ratio,
-            gamma_report=self.gamma_report,
+            gamma_child=self.gamma_child,
+            gamma_adult=self.gamma_adult,
+            gamma_elder=self.gamma_elder,
         )
 
 

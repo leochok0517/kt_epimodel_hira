@@ -1,4 +1,4 @@
-"""Calibration optimizer — 한 시즌 β/φ/γ_report fit (HIRA 버전).
+"""Calibration optimizer — 한 시즌 beta/phi/gamma_report fit (HIRA 버전).
 
 scipy.optimize.minimize 래퍼:
 - Nelder-Mead (gradient-free, robust)
@@ -6,12 +6,7 @@ scipy.optimize.minimize 래퍼:
 
 결과: CalibrationResult dataclass + JSON save/load.
 
-ILI 버전 (kt_epimodel/calibration/optimizer.py) 대비 차이:
-    - ``load_ili_target{_by_age}`` → ``load_hira_target{_by_age}``
-    - ``estimate_initial_infected_from_ili`` → ``estimate_initial_infected_from_hira``
-    - ``make_loss_function{_by_age}`` 는 동일 함수명이지만 HIRA 패키지의 것
-    - verbose 로그 메시지 'ILI' → 'HIRA' (cosmetic)
-    - 그 외 (dataclass, JSON schema, warm-start helper) 동일
+19-dim vector (seasonality 고정): beta(4) + phi(14) + gamma_report(1).
 """
 
 from __future__ import annotations
@@ -51,7 +46,7 @@ VALID_METHODS = ("Nelder-Mead", "L-BFGS-B")
 
 @dataclass
 class CalibrationResult:
-    """Calibration 결과 (ILI 버전 schema 동일 — 비교 분석 용이성)."""
+    """Calibration 결과."""
     season: str
     method: str
     success: bool
@@ -74,8 +69,6 @@ class CalibrationResult:
     first_peak_end_week: int = 26
     use_data_seed: bool = False
     seed_by_age: list[float] | None = None
-    # HIRA 에선 reporting fraction 단위 (0.05~0.5 권장).
-    # ILI 버전과 자릿수 다름 (ILI 노트북 200 vs HIRA 0.2).
     gamma_report_assumed: float = 1.0
 
 
@@ -161,9 +154,10 @@ def optimize_calibration(
         sol = minimize(
             loss_fn, initial_vec,
             method="L-BFGS-B", bounds=bounds,
-            options={"maxiter": max_iterations, "disp": verbose},
+            options={"maxiter": max_iterations, "disp": verbose,
+                     "ftol": 1e-5, "gtol": 1e-3},
         )
-    else:   # Nelder-Mead
+    else:
         sol = minimize(
             loss_fn, initial_vec,
             method="Nelder-Mead",
@@ -177,23 +171,23 @@ def optimize_calibration(
         )
     elapsed = time.perf_counter() - t0
 
-    fit_params, fit_amp, fit_base, fit_sigma, fit_peak = vector_to_params(sol.x)
+    fit_params = vector_to_params(sol.x)
+    dis = base_params.disease
 
     if verbose:
         print("\n=== Result (HIRA) ===")
         print(f"  success:      {sol.success}")
-        print(f"  NLL:          {nll_initial:.2f} → {sol.fun:.2f}")
+        print(f"  NLL:          {nll_initial:.2f} -> {sol.fun:.2f}")
         print(f"  evaluations:  {sol.nfev}")
         print(f"  elapsed:      {elapsed:.1f}s")
         print(
-            f"  fitted β:     h={fit_params.beta_h:.4f} w={fit_params.beta_w:.4f} "
+            f"  fitted beta:  h={fit_params.beta_h:.4f} w={fit_params.beta_w:.4f} "
             f"s={fit_params.beta_s:.4f} o={fit_params.beta_o:.4f}"
         )
-        print(f"  γ_report:     {fit_params.gamma_report:.4f}")
-        print(f"  amp:          {fit_amp:.4f}")
-        print(f"  base:         {fit_base:.4f}")
-        print(f"  sigma:        {fit_sigma:.2f}")
-        print(f"  peak_day:     {fit_peak:.1f}")
+        print(f"  gamma: child={fit_params.gamma_child:.4f} "
+              f"adult={fit_params.gamma_adult:.4f} elder={fit_params.gamma_elder:.4f}")
+        print(f"  seasonality:  {dis.seasonality_mode} amp={dis.seasonality_amp} "
+              f"peak={dis.seasonality_peak_day} (fixed)")
 
     return CalibrationResult(
         season=season,
@@ -202,11 +196,11 @@ def optimize_calibration(
         nll=float(sol.fun),
         nll_initial=nll_initial,
         calibration=fit_params,
-        seasonality_amp=fit_amp,
-        seasonality_base=fit_base,
-        seasonality_sigma=fit_sigma,
-        seasonality_peak_day=fit_peak,
-        seasonality_mode=base_params.disease.seasonality_mode,
+        seasonality_amp=dis.seasonality_amp,
+        seasonality_base=dis.seasonality_base,
+        seasonality_sigma=dis.seasonality_sigma,
+        seasonality_peak_day=dis.seasonality_peak_day,
+        seasonality_mode=dis.seasonality_mode,
         vector=np.asarray(sol.x, dtype=np.float64),
         n_evaluations=int(sol.nfev),
         elapsed_seconds=elapsed,
@@ -239,15 +233,7 @@ def optimize_calibration_by_age(
     first_peak_only: bool = True,
     first_peak_end_week: int = 26,
 ) -> CalibrationResult:
-    """6 HIRA 연령 그룹 동시 fit.
-
-    ``NLL = Σ_{age_group} Poisson NLL_{age_group}``.
-    ``use_data_seed=True`` (default): 시즌 시작 HIRA baseline 으로 연령별 seed 자동 추정.
-    season 필드는 ``'{season}_by_age'`` 로 기록.
-
-    ``gamma_report_assumed`` default 0.2 — HIRA reporting fraction 추정값
-    (도메인 산수 기반, simple_model.estimate_initial_infected_from_hira docstring 참조).
-    """
+    """6 HIRA 연령 그룹 동시 fit."""
     if method not in VALID_METHODS:
         raise ValueError(f"method must be in {VALID_METHODS}, got {method!r}")
     if base_params is None:
@@ -273,7 +259,7 @@ def optimize_calibration_by_age(
         if verbose:
             print(
                 f"Estimated seed by age "
-                f"(γ_report_assumed={gamma_report_assumed}, "
+                f"(gamma_report_assumed={gamma_report_assumed}, "
                 f"total={seed_total_effective:,.0f}):"
             )
             for a, n in enumerate(seed_by_age_arr):
@@ -305,7 +291,8 @@ def optimize_calibration_by_age(
         sol = minimize(
             loss_fn, initial_vec,
             method="L-BFGS-B", bounds=bounds,
-            options={"maxiter": max_iterations, "disp": verbose},
+            options={"maxiter": max_iterations, "disp": verbose,
+                     "ftol": 1e-5, "gtol": 1e-3},
         )
     else:
         sol = minimize(
@@ -319,23 +306,23 @@ def optimize_calibration_by_age(
             },
         )
     elapsed = time.perf_counter() - t0
-    fit_params, fit_amp, fit_base, fit_sigma, fit_peak = vector_to_params(sol.x)
+    fit_params = vector_to_params(sol.x)
+    dis = base_params.disease
 
     if verbose:
         print("\n=== Result (HIRA by_age) ===")
         print(f"  success:      {sol.success}")
-        print(f"  NLL:          {nll_initial:.2f} → {sol.fun:.2f}")
+        print(f"  NLL:          {nll_initial:.2f} -> {sol.fun:.2f}")
         print(f"  evaluations:  {sol.nfev}")
         print(f"  elapsed:      {elapsed:.1f}s")
         print(
-            f"  β fit:        h={fit_params.beta_h:.4f} w={fit_params.beta_w:.4f} "
+            f"  beta fit:     h={fit_params.beta_h:.4f} w={fit_params.beta_w:.4f} "
             f"s={fit_params.beta_s:.4f} o={fit_params.beta_o:.4f}"
         )
-        print(f"  γ_report:     {fit_params.gamma_report:.4f}")
-        print(f"  amp:          {fit_amp:.4f}")
-        print(f"  base:         {fit_base:.4f}")
-        print(f"  sigma:        {fit_sigma:.2f}")
-        print(f"  peak_day:     {fit_peak:.1f}")
+        print(f"  gamma: child={fit_params.gamma_child:.4f} "
+              f"adult={fit_params.gamma_adult:.4f} elder={fit_params.gamma_elder:.4f}")
+        print(f"  seasonality:  {dis.seasonality_mode} amp={dis.seasonality_amp} "
+              f"peak={dis.seasonality_peak_day} (fixed)")
 
     return CalibrationResult(
         season=f"{season}_by_age",
@@ -344,11 +331,11 @@ def optimize_calibration_by_age(
         nll=float(sol.fun),
         nll_initial=nll_initial,
         calibration=fit_params,
-        seasonality_amp=fit_amp,
-        seasonality_base=fit_base,
-        seasonality_sigma=fit_sigma,
-        seasonality_peak_day=fit_peak,
-        seasonality_mode=base_params.disease.seasonality_mode,
+        seasonality_amp=dis.seasonality_amp,
+        seasonality_base=dis.seasonality_base,
+        seasonality_sigma=dis.seasonality_sigma,
+        seasonality_peak_day=dis.seasonality_peak_day,
+        seasonality_mode=dis.seasonality_mode,
         vector=np.asarray(sol.x, dtype=np.float64),
         n_evaluations=int(sol.nfev),
         elapsed_seconds=elapsed,
@@ -365,15 +352,10 @@ def optimize_calibration_by_age(
 
 
 # ---------------------------------------------------------------------------
-# Save / Load (ILI 버전과 JSON schema 동일 — 비교 분석용)
+# Save / Load
 # ---------------------------------------------------------------------------
 
 def save_result(result: CalibrationResult, path: Path | str) -> None:
-    """JSON 저장. 부모 폴더 자동 생성.
-
-    출력 파일명 권장: ``outputs/calibration/<season>_by_age_<METHOD>_HIRA.json``
-    (ILI 결과와 구분).
-    """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -406,7 +388,9 @@ def save_result(result: CalibrationResult, path: Path | str) -> None:
             "beta_s": result.calibration.beta_s,
             "beta_o": result.calibration.beta_o,
             "phi": result.calibration.phi.tolist(),
-            "gamma_report": result.calibration.gamma_report,
+            "gamma_child": result.calibration.gamma_child,
+            "gamma_adult": result.calibration.gamma_adult,
+            "gamma_elder": result.calibration.gamma_elder,
         },
     }
     with open(path, "w") as f:
@@ -414,16 +398,18 @@ def save_result(result: CalibrationResult, path: Path | str) -> None:
 
 
 def load_result(path: Path | str) -> CalibrationResult:
-    """JSON 로드."""
     with open(path) as f:
         data = json.load(f)
+    cal_data = data["calibration"]
     cal = CalibrationParameters(
-        beta_h=data["calibration"]["beta_h"],
-        beta_w=data["calibration"]["beta_w"],
-        beta_s=data["calibration"]["beta_s"],
-        beta_o=data["calibration"]["beta_o"],
-        phi=np.asarray(data["calibration"]["phi"], dtype=np.float64),
-        gamma_report=data["calibration"]["gamma_report"],
+        beta_h=cal_data["beta_h"],
+        beta_w=cal_data["beta_w"],
+        beta_s=cal_data["beta_s"],
+        beta_o=cal_data["beta_o"],
+        phi=np.asarray(cal_data["phi"], dtype=np.float64),
+        gamma_child=float(cal_data.get("gamma_child", 0.40)),
+        gamma_adult=float(cal_data.get("gamma_adult", 0.18)),
+        gamma_elder=float(cal_data.get("gamma_elder", 0.25)),
     )
     return CalibrationResult(
         season=data["season"],
@@ -432,10 +418,10 @@ def load_result(path: Path | str) -> CalibrationResult:
         nll=data["nll"],
         nll_initial=data["nll_initial"],
         calibration=cal,
-        seasonality_amp=float(data.get("seasonality_amp", 0.0)),
+        seasonality_amp=float(data.get("seasonality_amp", 0.7)),
         seasonality_base=float(data.get("seasonality_base", 1.0)),
         seasonality_sigma=float(data.get("seasonality_sigma", 40.0)),
-        seasonality_peak_day=float(data.get("seasonality_peak_day", 130.0)),
+        seasonality_peak_day=float(data.get("seasonality_peak_day", 105.0)),
         seasonality_mode=str(data.get("seasonality_mode", "cosine")),
         vector=np.asarray(data["vector"], dtype=np.float64),
         n_evaluations=data["n_evaluations"],

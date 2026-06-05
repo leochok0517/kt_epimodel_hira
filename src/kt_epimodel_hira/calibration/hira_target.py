@@ -192,32 +192,28 @@ def load_hira_target_by_age(
 # ---------------------------------------------------------------------------
 
 def simulation_to_hira(
-    daily_incidence: np.ndarray,
-    gamma_report: float,
+    daily_incidence_by_age: np.ndarray,
+    gamma_15: np.ndarray,
     n_weeks: int = N_WEEKS,
 ) -> np.ndarray:
-    """시뮬레이션 일일 신규감염 → 주별 HIRA 카운트 (연령 합산).
-
-    ILI 버전과 차이:
-        - per-1000 곱셈 제거.
-        - 인구 분모 (``population``) 제거 — HIRA 는 카운트 단위.
-
-    수식: ``hira_count_week = gamma_report * Σ_day daily_incidence``.
+    """모델 출력 → 주별 HIRA 카운트 (연령 합산).
 
     Args:
-        daily_incidence: (n_days,) 또는 (n_days, ...) — ... 차원은 합산.
-        gamma_report: HIRA reporting fraction (감염자 중 진료 청구된 비율).
-        n_weeks: 출력 주차 수 (기본 52). 부족하면 0 패딩, 넘치면 절단.
+        daily_incidence_by_age: (n_days, 15) — NIMS 15군 일일 신규 감염.
+        gamma_15: (15,) age-dependent reporting fraction.
+        n_weeks: 출력 주차 수.
     """
-    arr = np.asarray(daily_incidence, dtype=np.float64)
-    if arr.ndim > 1:
-        daily_total = arr.reshape(arr.shape[0], -1).sum(axis=1)
-    else:
-        daily_total = arr
+    arr = np.asarray(daily_incidence_by_age, dtype=np.float64)
+    if arr.ndim != 2 or arr.shape[1] != 15:
+        raise ValueError(
+            f"daily_incidence_by_age must be (n_days, 15), got {arr.shape}"
+        )
+    gamma_15 = np.asarray(gamma_15, dtype=np.float64)
 
-    n_complete = len(daily_total) // 7
-    weekly = daily_total[: n_complete * 7].reshape(-1, 7).sum(axis=1)
-    hira = gamma_report * weekly   # 카운트 (인구 분모 / per-1000 없음)
+    n_complete = arr.shape[0] // 7
+    weekly = arr[: n_complete * 7].reshape(n_complete, 7, 15).sum(axis=1)
+    reported = weekly * gamma_15[np.newaxis, :]
+    hira = reported.sum(axis=1)
 
     if len(hira) >= n_weeks:
         return hira[:n_weeks]
@@ -226,33 +222,31 @@ def simulation_to_hira(
 
 def simulation_to_hira_by_age(
     daily_incidence_by_age: np.ndarray,
-    gamma_report: float,
+    gamma_15: np.ndarray,
     n_weeks: int = N_WEEKS,
 ) -> dict[str, np.ndarray]:
     """모델 출력 → 6 HIRA 연령 그룹 주별 카운트.
 
+    gamma_15 is applied at NIMS-15 level before HIRA group mapping,
+    so cross-boundary groups (e.g. 18-44 spanning child/adult) get
+    the correct per-age gamma.
+
     Args:
         daily_incidence_by_age: (n_days, 15) — NIMS 15군 일일 신규 감염.
-        gamma_report: reporting fraction.
+        gamma_15: (15,) age-dependent reporting fraction.
         n_weeks: 출력 주차 수.
-
-    Returns:
-        {age_group: (n_weeks,) HIRA count}
-
-    ILI 버전과 차이:
-        - per-1000 곱셈 + 인구 분모 제거 (카운트 단위).
-        - 6 그룹 매핑 (HIRA_GROUP_TO_NIMS_WEIGHTED).
-        - ``pop_15`` 인자 불필요 (카운트는 인구 비례 가중만 쓰면 됨).
     """
     arr = np.asarray(daily_incidence_by_age, dtype=np.float64)
     if arr.ndim != 2 or arr.shape[1] != 15:
         raise ValueError(
             f"daily_incidence_by_age must be (n_days, 15), got {arr.shape}"
         )
+    gamma_15 = np.asarray(gamma_15, dtype=np.float64)
 
     n_days = arr.shape[0]
     n_complete = n_days // 7
-    weekly = arr[: n_complete * 7].reshape(n_complete, 7, 15).sum(axis=1)   # (n_w, 15)
+    weekly = arr[: n_complete * 7].reshape(n_complete, 7, 15).sum(axis=1)
+    reported = weekly * gamma_15[np.newaxis, :]
 
     def _pad(x: np.ndarray) -> np.ndarray:
         if len(x) >= n_weeks:
@@ -261,11 +255,10 @@ def simulation_to_hira_by_age(
 
     out: dict[str, np.ndarray] = {}
     for ag, weights in HIRA_GROUP_TO_NIMS_WEIGHTED.items():
-        group_inc = np.zeros(weekly.shape[0])
+        group_count = np.zeros(n_complete)
         for nims_idx, w in weights.items():
-            group_inc += w * weekly[:, nims_idx]
-        hira = gamma_report * group_inc   # 카운트
-        out[ag] = _pad(hira)
+            group_count += w * reported[:, nims_idx]
+        out[ag] = _pad(group_count)
     return out
 
 
@@ -278,16 +271,15 @@ def poisson_log_likelihood(
     predicted: np.ndarray,
     is_valid: np.ndarray | None = None,
     weights: np.ndarray | None = None,
-    min_rate: float = 1.0,
+    min_rate: float = 0.01,
 ) -> float:
     """Weighted Poisson NLL = Σ w_i [y_pred − y_obs · log(y_pred)].
 
     Args:
         weights: (n_weeks,) 가중치. None 이면 1.0. weight=0 인 주는 NLL 기여 0.
         min_rate: predicted 의 lower floor.
-            **TODO HIRA-D**: ILI 버전 default 0.1 (per-1000 단위) → HIRA 는
-            카운트 스케일이라 default 1.0 으로 잠정. 1차 fit 후 실측 카운트
-            분포 보고 재튜닝 검토 (예: 주당 평균 카운트의 1%).
+            # HIRA-D: min_rate 0.01 (was 1.0). 카운트 데이터 스케일에 맞춰 낮춤.
+            # 너무 낮으면 baseline 구간 (low count) 에서 NLL 발산 위험 — fit 후 점검.
     """
     observed = np.asarray(observed, dtype=np.float64)
     predicted = np.asarray(predicted, dtype=np.float64)

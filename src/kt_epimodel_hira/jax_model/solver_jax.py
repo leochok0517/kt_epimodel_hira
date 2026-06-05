@@ -1,0 +1,111 @@
+"""JAX/diffrax integration of SVEIR ODE (M1b).
+
+Mirrors src/kt_epimodel_hira/simulation/solver.py::run_simulation.
+
+Replaces scipy.integrate.solve_ivp (RK45) with diffrax.diffeqsolve (Dopri5).
+Dopri5 is the same Dormand-Prince(5) tableau as scipy's RK45 — numerical
+agreement to within adaptive-step tolerance.
+
+State carried as 3D pytree (5, 15, n_admdong); no flatten needed.
+"""
+from __future__ import annotations
+from typing import Callable, NamedTuple
+import jax
+import jax.numpy as jnp
+from diffrax import ODETerm, Dopri5, Tsit5, diffeqsolve, SaveAt, PIDController
+
+from kt_epimodel_hira.jax_model.dynamics_jax import compute_derivatives_jax
+
+IDX_S, IDX_V, IDX_E, IDX_I, IDX_R = 0, 1, 2, 3, 4
+
+
+def simulate_jax(
+    initial_state: jnp.ndarray,           # (5, 15, n_admdong)
+    *,
+    # contact + mobility (static converted)
+    C_home, C_school, C_work, C_other,
+    M_home, M_school, M_work, M_other,
+    pop_15, rho, kappa,
+    # disease
+    sigma: float, gamma: float,
+    # calibration
+    beta_h: float, beta_w: float, beta_s: float, beta_o: float,
+    phi_susc: jnp.ndarray,
+    # policy
+    p_school: float, p_work: float,
+    # vaccination
+    VE: float, annual_coverage: jnp.ndarray,
+    vax_peak_iso_week: int = 42, vax_spread_weeks: float = 4.0,
+    # seasonality (cosine fixed)
+    seasonality_amp: float = 0.7, seasonality_base: float = 0.0,
+    seasonality_peak_day: float = 105.0, seasonality_period: float = 365.0,
+    day_in_season_offset: float = 0.0,
+    # integration
+    t_span: tuple[float, float] = (0.0, 364.0),
+    rtol: float = 1e-4,
+    atol: float = 1e-6,
+    method: str = "Dopri5",
+    max_steps: int = 500_000,
+    discretize_time: bool = False,
+):
+    """Integrate SVEIR ODE. Returns states (n_t, 5, 15, n_admdong).
+
+    Args:
+        discretize_time: if True, time argument to RHS is floor(t). Matches
+            scipy reference (which uses ``int(t + offset)``) bit-by-bit for
+            regression. Default False uses continuous t (smoother ODE; more
+            physically correct; better for MCMC).
+    """
+    t_eval = jnp.arange(t_span[0], t_span[1] + 1.0, 1.0)
+
+    def rhs(t, y, args):
+        t_used = jnp.floor(t) if discretize_time else t
+        return compute_derivatives_jax(
+            y, t_used,
+            C_home=C_home, C_school=C_school, C_work=C_work, C_other=C_other,
+            M_home=M_home, M_school=M_school, M_work=M_work, M_other=M_other,
+            pop_15=pop_15, rho=rho, kappa=kappa,
+            sigma=sigma, gamma=gamma,
+            beta_h=beta_h, beta_w=beta_w, beta_s=beta_s, beta_o=beta_o,
+            phi_susc=phi_susc,
+            p_school=p_school, p_work=p_work,
+            VE=VE, annual_coverage=annual_coverage,
+            vax_peak_iso_week=vax_peak_iso_week, vax_spread_weeks=vax_spread_weeks,
+            seasonality_amp=seasonality_amp, seasonality_base=seasonality_base,
+            seasonality_peak_day=seasonality_peak_day, seasonality_period=seasonality_period,
+            day_in_season_offset=day_in_season_offset,
+        )
+
+    solver = Dopri5() if method == "Dopri5" else Tsit5()
+    term = ODETerm(rhs)
+    sol = diffeqsolve(
+        term, solver,
+        t0=t_span[0], t1=t_span[1], dt0=0.1,
+        y0=initial_state,
+        saveat=SaveAt(ts=t_eval),
+        stepsize_controller=PIDController(rtol=rtol, atol=atol),
+        max_steps=max_steps,
+    )
+    return sol.ys  # (n_t, 5, 15, n_admdong)
+
+
+def daily_new_infection_by_age_jax(states: jnp.ndarray) -> jnp.ndarray:
+    """Mirror of SimulationResult.daily_new_infection_by_age.
+
+    Args:
+        states: (n_t, 5, 15, n_admdong)
+    Returns:
+        (n_t-1, 15)
+    """
+    E = states[:, IDX_E, :, :].sum(axis=-1)
+    I = states[:, IDX_I, :, :].sum(axis=-1)
+    R = states[:, IDX_R, :, :].sum(axis=-1)
+    return jnp.diff(E + I + R, axis=0)
+
+
+def daily_new_infection_jax(states: jnp.ndarray) -> jnp.ndarray:
+    """Mirror of SimulationResult.daily_new_infection. (n_t-1,)."""
+    E = states[:, IDX_E].sum(axis=(1, 2))
+    I = states[:, IDX_I].sum(axis=(1, 2))
+    R = states[:, IDX_R].sum(axis=(1, 2))
+    return jnp.diff(E + I + R)
