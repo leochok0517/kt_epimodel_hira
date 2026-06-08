@@ -67,10 +67,12 @@ def hira_model(
 
     def model():
         # phi: 14 ages, truncated normal centered at reference (φ_25-29 = 1.0).
-        # POLYMOD-based susceptibility ~ ±30%; hard cap at 3x reference.
+        # Tightened per Cauchemez et al. (household ~15% child-vs-adult diff).
+        # Previous σ=0.3 [0.1, 3.0] led to posterior mean 2.0 (β-φ ridge);
+        # σ=0.15 [0.5, 1.5] blocks that mode. See PRIOR_SPECIFICATION §2.2.5-6.
         phi = numpyro.sample(
             "phi",
-            dist.TruncatedNormal(1.0, 0.3, low=0.1, high=3.0)
+            dist.TruncatedNormal(1.0, 0.15, low=0.5, high=1.5)
                 .expand([14]).to_event(1),
         )
         numpyro.factor("phi_smooth", -lambda_phi * jnp.sum(jnp.diff(phi) ** 2))
@@ -83,7 +85,7 @@ def hira_model(
         # configurations rare (4-channel epidemic explosion prevention).
         beta = numpyro.sample(
             "beta",
-            dist.TruncatedNormal(0.04, 0.04, low=0.001, high=0.20)
+            dist.TruncatedNormal(0.04, 0.04, low=0.001, high=0.15)
                 .expand([16]).to_event(1),
         )
 

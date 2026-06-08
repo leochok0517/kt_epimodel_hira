@@ -45,7 +45,7 @@ def simulate_jax(
     rtol: float = 1e-4,
     atol: float = 1e-6,
     method: str = "Dopri5",
-    max_steps: int = 500_000,
+    max_steps: int = 200_000,
     discretize_time: bool = False,
 ):
     """Integrate SVEIR ODE. Returns states (n_t, 5, 15, n_admdong).

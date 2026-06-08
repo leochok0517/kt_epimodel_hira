@@ -152,6 +152,57 @@ log p(φ) = -λ_phi · Σ_{i=0}^{12} (φ_{i+1} - φ_i)²  + const
 #### 2.2.4 φ_reference 정규화 유지
 
 기존: φ_5 (25-29세) = 1.0 reference. 다른 φ_a 는 25-29 대비 상대값.
+
+#### 2.2.5 φ의 정체 — per-contact susceptibility (M2 Phase 2 추가)
+
+**φ는 contact matrix 위에 곱해지는 연령별 per-contact susceptibility**
+인자 (문헌의 비례 인자 q). 모델 식:
+```
+β(a, a') = q(a) · c(a, a')
+```
+여기서 c(a,a')는 POLYMOD/NIMS 측정 contact, q(a)가 본 모델의 φ_a.
+φ_25-29 = 1.0 reference 고정 (절대 스케일 anchor).
+
+**연령차가 작다는 외부 근거**:
+- **Cauchemez et al. (가구 연구)**: 어린이(<15y)의 per-contact susceptibility는
+  성인보다 약 **15% 높음** (작은 차이)
+- 어린이의 높은 인플루엔자 발생률은 per-contact susceptibility(φ)가 아니라:
+  - **접촉 빈도** (학교 채널의 큰 row sum → contact matrix c가 담당)
+  - **감염성** (서로 옮기는 강도, β 채널이 담당)
+  - **초기 면역** (R(0) step profile이 담당, child=0.10)
+- 노인의 낮은 감수성 역시 **R(0) step (65+=0.65)** 이 반영, φ는 per-contact
+  중성에 가까움
+- 따라서 per-contact susceptibility **φ의 연령 변동은 ±15-20% 수준**이
+  생물학적으로 현실적
+
+#### 2.2.6 φ posterior prior (M2 본 샘플링용)
+
+**최종 prior**: `φ ~ TruncatedNormal(μ=1.0, σ=0.15, low=0.5, high=1.5)`
+
+| 항목 | 값 | 근거 |
+|---|---|---|
+| μ | 1.0 | reference normalization |
+| σ | **0.15** | Cauchemez ±15% 와 정합 (±2σ ≈ [0.7, 1.3]) |
+| low | 0.5 | reference의 절반 미만은 비물리적 (즉 더 robust 한 그룹) |
+| high | 1.5 | reference의 1.5배 이상 per-contact susceptible은 비물리적 |
+
+**이전 시도와 비교**:
+- σ=0.5 (LogNormal): 무경계, NUTS에서 φ가 무한대로 폭주 (M1d smoke)
+- σ=0.3 (TruncatedNormal [0.1, 3.0]): posterior mean 2.0, range [0.45, 2.67] —
+  β-φ 비식별로 φ가 인위적으로 뜬 결과 (M2 smoke v2). 생물학적 실체 아님 →
+  좁힐 정당성
+- **σ=0.15 [0.5, 1.5]**: Cauchemez 근거 + β-φ ridge의 φ 자유도 차단
+
+**정당성** (γ와 구분되는 점):
+- γ (reporting): 데이터가 정보 부족 → 외부값으로 채움 (Stage 5 PSA)
+- φ (per-contact susceptibility): 문헌상 연령차 작음 (±15%) → **비물리적
+  영역 (φ > 1.5 또는 φ < 0.5) 배제**
+- 둘 다 "데이터를 prior로 이기는" 것이 아니라 "정보 없거나 비물리적 영역을
+  외부 지식으로 제약" — 정당.
+
+**효과**: β-φ ridge의 φ 자유도 차단 → 함의 R0 정상화 ([1, 2.5]) 기대.
+
+
 Smoothing prior 는 이 reference 를 유지하며 인접 연속성만 강제.
 
 ---
