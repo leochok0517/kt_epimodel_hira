@@ -1,21 +1,24 @@
 """Numpyro probabilistic model for HIRA multi-season calibration.
 
-γ is fixed externally (see calibration/gamma_registry.py + GAMMA_STRATEGY.md):
-β · φ · γ multiplicative non-identifiability is irresolvable from data alone,
-so γ is taken from a citable external source. Only φ and β are sampled.
+Reparam A (v7+): the β · φ multiplicative ridge — formally broken by the
+φ_5≡1 anchor in loss_jax but causing strong soft anisotropy (chain 1 vs 2
+step sizes 1.79e-03 vs 7.81e-05 in v6) — is now aligned to the coordinate
+axes:
 
-Sampled parameters:
-- phi (14): LogNormal(0, 0.5) + smoothing factor λ_phi · Σ(Δφ)²
-- beta (16): HalfNormal(σ=1.0)  -- PRIOR_SPECIFICATION.md §2.3
+- per-season log_R0 (4): primary axis, the data-visible scale
+- per-season channel simplex (4 logits per season, softmax → 4-simplex):
+  h/w/s/o mix
+- φ (14 ages): age susceptibility multipliers (φ_5≡1.0 anchor in loss_fn)
 
-Fixed:
-- gamma_child, gamma_adult, gamma_elder = from gamma_registry.get_active_gamma()
-  (compressed to per-group constants in the model body)
+β (16) is *derived* per season: β_ch = (R0 / ρ(K(π_s, φ))) · π_s_ch, where
+ρ is the NGM spectral radius. This makes R0 exactly identified by data and
+removes the scale ridge from the sampler's geometry. γ stays fixed
+(see gamma_registry + GAMMA_STRATEGY.md).
 
-Likelihood: Poisson NLL via numpyro.factor("likelihood", -nll). The
-multi-season NLL is provided by make_multi_season_loss_fn (M1c).
+Likelihood: Poisson NLL via numpyro.factor("likelihood", -nll).
 """
 from __future__ import annotations
+import jax
 import jax.numpy as jnp
 import numpyro
 import numpyro.distributions as dist
@@ -27,12 +30,11 @@ from kt_epimodel_hira.calibration.gamma_registry import (
 
 
 def vec_to_param_dict(vec_33):
-    """Map 33-dim warm-start vec to numpyro param dict for init_to_value.
+    """Map 33-dim warm-start vec to (phi, beta) for init_to_value.
 
-    Even though γ is now fixed, the helper still extracts γ from a 33-dim
-    vec (used in init_params keying just for phi + beta).
-
-    Layout: [phi(14), gamma(3) -- ignored --, beta(16)]
+    Layout: [phi(14), gamma(3) -- ignored --, beta(16)]. Reparam v7+ does not
+    sample β directly, so this helper is now used only for legacy regression
+    tests. Use vec_to_reparam_init for v7+ init.
     """
     return {
         "phi": jnp.asarray(vec_33[:14]),
@@ -40,71 +42,153 @@ def vec_to_param_dict(vec_33):
     }
 
 
+def make_ngm_eigvalue_fn(
+    *,
+    pop_15,          # (15, n_admdong)
+    rho,             # (n_admdong, 15) or (15, n_admdong) per data convention
+    C_home, C_work, C_school, C_other,
+    R0_immunity,     # (15,) initial immunity profile
+    gamma: float,
+    seasonal_factor: float = 1.7,
+):
+    """Build a JAX NGM spectral-radius closure.
+
+    Returns ``ngm_eigval(beta_h, beta_w, beta_s, beta_o, phi_full)`` → scalar R0.
+
+    Mirrors compute_R0_from_sample in scripts/m2_smoke_prior.py but pure JAX
+    so it is autodiff- and jit-friendly inside the numpyro model.
+    """
+    pop = jnp.asarray(pop_15).reshape(-1)            # (15,)
+    N_safe = jnp.maximum(pop, 1e-10)
+    rho_flat = jnp.asarray(rho).reshape(-1)
+    # Match numpy convention in compute_R0_from_sample: rho is (15,) flattened
+    if rho_flat.shape[0] != 15:
+        # If aggregated input has (n_admdong, 15), reduce to per-age rho
+        rho_arr = jnp.asarray(rho)
+        rho_flat = rho_arr.mean(axis=0) if rho_arr.shape[-1] == 15 else rho_arr.reshape(-1)[:15]
+    rho_ok = (rho_flat > 0).astype(jnp.float64)
+    S_frac = 1.0 - jnp.asarray(R0_immunity)
+    work_mask = jnp.zeros(15, dtype=jnp.float64).at[4:14].set(1.0)
+    school_mask = jnp.zeros((15, 15), dtype=jnp.float64).at[:4, :4].set(1.0)
+    sf_gamma = seasonal_factor / gamma
+
+    Ch = jnp.asarray(C_home)
+    Cw = jnp.asarray(C_work)
+    Cs = jnp.asarray(C_school)
+    Co = jnp.asarray(C_other)
+
+    def ngm_eigval(beta_h, beta_w, beta_s, beta_o, phi_full):
+        # C_eff(a, a'): per-channel additive structure (mirrors compute_R0_from_sample)
+        C_eff = beta_h * Ch
+        C_eff = C_eff + beta_s * Cs * school_mask
+        # work: row-a addition = beta_w * Cw[a, j] * rho[a] * rho_ok[j], for a in [4, 13]
+        C_eff = C_eff + beta_w * Cw * (rho_flat * work_mask)[:, None] * rho_ok[None, :]
+        C_eff = C_eff + beta_o * Co
+        # K = (sf/γ) · diag(pop) · diag(φ) · diag(S) · C_eff · diag(1/N)
+        # Equivalent vectorized form (avoids 15×15 diag matmuls):
+        K = sf_gamma * (pop * phi_full * S_frac)[:, None] * C_eff * (1.0 / N_safe)[None, :]
+        eigvals = jnp.linalg.eigvals(K)
+        return jnp.max(jnp.real(eigvals))
+
+    return ngm_eigval
+
+
+def derive_beta_from_R0_simplex(ngm_eigval_fn, R0, pi_4, phi_full):
+    """Derive (β_h, β_w, β_s, β_o) from (R0, simplex, φ) so that NGM ρ = R0.
+
+    Uses 1-homogeneity of the spectral radius in β: ρ(K(s·π, φ)) = s·ρ(K(π, φ)),
+    so the scale s = R0 / ρ(K(π, φ)) inverts exactly.
+    """
+    rho_pi = ngm_eigval_fn(pi_4[0], pi_4[1], pi_4[2], pi_4[3], phi_full)
+    scale = R0 / rho_pi
+    return scale * pi_4
+
+
 def hira_model(
     loss_fn,
     *,
+    ngm_eigval_fn,
+    n_seasons: int = 4,
     lambda_phi: float = 0.1,
 ):
-    """Build a parameter-less numpyro model.
+    """Build a parameter-less numpyro model with reparam A.
 
-    γ is *fixed* at the active registry source. The model samples only
-    φ (14) and β (16). NLL is computed against the same loss_fn used in
-    M1c regression, with γ injected into the 33-dim vector at call time.
+    Args:
+        loss_fn: jax-compiled multi-season Poisson NLL (signature: vec_33 → scalar).
+        ngm_eigval_fn: closure from ``make_ngm_eigvalue_fn``. Used to derive β.
+        n_seasons: number of seasons (4 in current setup).
+        lambda_phi: smoothing penalty on log φ differences.
 
-    Use with NUTS:
-        from kt_epimodel_hira.jax_model.numpyro_model import hira_model
-        model = hira_model(loss_fn)
-        kernel = NUTS(model)
-        mcmc = MCMC(kernel, ...)
-        mcmc.run(rng_key)
+    Sampled (primary axes):
+        - log_R0: (n_seasons,) per-season log basic reproduction number.
+        - logit_pi: (n_seasons, 4) per-season channel mix (logits, softmax inside).
+        - phi: (14,) age susceptibility (LogNormal, φ_5≡1.0 anchor in loss).
+
+    Deterministic:
+        - R0 = exp(log_R0), pi = softmax(logit_pi), beta (16) = derive(R0, pi, φ)
+        - gamma_{child,adult,elder} from registry.
     """
-    # Snapshot active γ at build time. The model body uses these as constants.
-    gamma_active = get_active_gamma()  # (15,)
-    # Extract per-group scalar (all values within each group are identical)
+    gamma_active = get_active_gamma()
     gamma_child_fixed = float(gamma_active[CHILD_IDX[0]])
     gamma_adult_fixed = float(gamma_active[ADULT_IDX[0]])
     gamma_elder_fixed = float(gamma_active[ELDER_IDX[0]])
 
     def model():
-        # phi: 14 ages, truncated normal centered at reference (φ_25-29 = 1.0).
-        # Tightened per Cauchemez et al. (household ~15% child-vs-adult diff).
-        # Previous σ=0.3 [0.1, 3.0] led to posterior mean 2.0 (β-φ ridge);
-        # σ=0.15 [0.5, 1.5] blocks that mode. See PRIOR_SPECIFICATION §2.2.5-6.
+        # Primary axis: log_R0 per season. TN centered at log 1.5 (typical
+        # seasonal flu R0); [log 0.8, log 2.8] = [-0.22, 1.03] covers full range.
+        log_R0 = numpyro.sample(
+            "log_R0",
+            dist.TruncatedNormal(
+                jnp.log(1.5), 0.3,
+                low=jnp.log(0.8), high=jnp.log(2.8),
+            ).expand([n_seasons]).to_event(1),
+        )
+        R0 = jnp.exp(log_R0)
+
+        # Channel mix per season: softmax over 4 logits (no reference fix; σ=0.5
+        # gives shape mass ≈ unimodal at uniform mix). Symmetric so all channels
+        # are exchangeable a priori.
+        # σ=0.3 keeps simplex mass near uniform (no single channel >~0.6 with
+        # high prior weight). σ=0.5 in v7a caused NUTS to probe near-degenerate
+        # mixes (one channel ≈1.0) → β explosion → ODE max_steps overrun.
+        logit_pi = numpyro.sample(
+            "logit_pi",
+            dist.Normal(0.0, 0.3).expand([n_seasons, 4]).to_event(2),
+        )
+        pi = jax.nn.softmax(logit_pi, axis=-1)
+
+        # φ: per-age susceptibility multipliers. LogNormal(0, 0.15) keeps
+        # median=1.0 (anchor φ_5≡1.0 inserted in loss_fn) and ±15% Cauchemez.
         phi = numpyro.sample(
             "phi",
-            dist.TruncatedNormal(1.0, 0.15, low=0.5, high=1.5)
-                .expand([14]).to_event(1),
+            dist.LogNormal(0.0, 0.15).expand([14]).to_event(1),
         )
         numpyro.factor("phi_smooth", -lambda_phi * jnp.sum(jnp.diff(phi) ** 2))
 
-        # beta: 16 channels (4 ch × 4 seasons). TruncatedNormal derived from
-        # R0 inversion: R0_peak ≈ 36.9 × β (uniform), so β ∈ [0.027, 0.068]
-        # covers R0 ∈ [1.0, 2.5] (seasonal influenza range). Per-channel,
-        # widen to high=0.20 to allow single-channel dominance (observed in
-        # L-BFGS fits, e.g. β_h=0.20). σ=0.04 keeps simultaneous-large-β
-        # configurations rare (4-channel epidemic explosion prevention).
-        beta = numpyro.sample(
-            "beta",
-            dist.TruncatedNormal(0.04, 0.04, low=0.001, high=0.15)
-                .expand([16]).to_event(1),
-        )
+        # Build φ_full (15,) with φ_5 = 1.0 anchor (same as loss_jax composition)
+        phi_full = jnp.concatenate([phi[:5], jnp.array([1.0]), phi[5:]])
 
-        # gamma: FIXED at active registry source (deterministic, not sampled)
+        # Derive β per season via 1-homogeneous NGM inversion
+        def derive_one(r, p):
+            return derive_beta_from_R0_simplex(ngm_eigval_fn, r, p, phi_full)
+
+        beta_per_season = jax.vmap(derive_one)(R0, pi)  # (n_seasons, 4)
+        beta_16 = beta_per_season.reshape(-1)            # [β_2017_4, ...]
+
+        # γ: fixed from registry
         gamma_3 = jnp.array([
             gamma_child_fixed, gamma_adult_fixed, gamma_elder_fixed,
         ])
-        # Track for posterior summaries (these are constants, but appearing
-        # in idata makes provenance explicit).
         numpyro.deterministic("gamma_child", gamma_3[0])
         numpyro.deterministic("gamma_adult", gamma_3[1])
         numpyro.deterministic("gamma_elder", gamma_3[2])
+        numpyro.deterministic("R0", R0)
+        numpyro.deterministic("pi", pi)
+        numpyro.deterministic("beta", beta_16)
 
-        # Assemble 33-dim vec for loss_fn signature compatibility
-        vec_33 = jnp.concatenate([phi, gamma_3, beta])
-
+        vec_33 = jnp.concatenate([phi, gamma_3, beta_16])
         nll = loss_fn(vec_33)
         numpyro.factor("likelihood", -nll)
 
-    # Attach provenance for downstream logging
     model.gamma_source = get_active_source()
     return model

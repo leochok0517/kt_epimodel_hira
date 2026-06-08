@@ -12,7 +12,7 @@ from __future__ import annotations
 from typing import Callable, NamedTuple
 import jax
 import jax.numpy as jnp
-from diffrax import ODETerm, Dopri5, Tsit5, diffeqsolve, SaveAt, PIDController
+from diffrax import ODETerm, Dopri5, Tsit5, diffeqsolve, SaveAt, PIDController, RESULTS
 
 from kt_epimodel_hira.jax_model.dynamics_jax import compute_derivatives_jax
 
@@ -85,8 +85,16 @@ def simulate_jax(
         saveat=SaveAt(ts=t_eval),
         stepsize_controller=PIDController(rtol=rtol, atol=atol),
         max_steps=max_steps,
+        throw=False,   # do not raise on failure — needed under NUTS where extreme
+                       # parameter probes (esp. reparam v7+ with near-degenerate
+                       # simplex) can stiffen the ODE past max_steps.
     )
-    return sol.ys  # (n_t, 5, 15, n_admdong)
+    # Replace NaN/inf with a finite large sentinel so downstream NLL is finite
+    # (large) and HMC rejects cleanly. NaN-filled ys would poison the mass-matrix
+    # adaptation through autodiff. Prior tightening (logit_pi σ, etc.) is the
+    # primary defence; this is the secondary net.
+    ok = sol.result == RESULTS.successful
+    return jnp.where(ok, sol.ys, jnp.full_like(sol.ys, 1e10))
 
 
 def daily_new_infection_by_age_jax(states: jnp.ndarray) -> jnp.ndarray:

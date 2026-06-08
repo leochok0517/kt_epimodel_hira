@@ -60,7 +60,9 @@ from kt_epimodel_hira.model.parameters import (
 from kt_epimodel_hira.jax_model.loss_jax import (
     HIRA_AGE_GROUPS, make_multi_season_loss_fn,
 )
-from kt_epimodel_hira.jax_model.numpyro_model import hira_model
+from kt_epimodel_hira.jax_model.numpyro_model import (
+    hira_model, make_ngm_eigvalue_fn,
+)
 
 
 def compute_R0_uniform(beta_uniform, phi=1.0, seasonal_factor=1.7):
@@ -125,13 +127,15 @@ def main():
         SENTINEL.unlink()
 
     print("=" * 70)
-    print("M2 smoke v2 — priors tightened + ODE 200K + sentinel")
+    print("M2 smoke v7 — reparam A (log_R0 + channel simplex)")
     print("=" * 70)
     src = get_active_source()
     print(f"  γ source: {src.key}")
-    print(f"  β prior:  TN(0.04, 0.04, [0.001, 0.15])  [v2: high 0.20 -> 0.15]")
-    print(f"  φ prior:  TN(1.0, 0.3, [0.1, 3.0])")
-    print(f"  ODE max_steps: 200K  [v2: 500K -> 200K]")
+    print(f"  log_R0 prior:  TN(log 1.5, 0.3, [log 0.8, log 2.8])")
+    print(f"  logit_pi prior: Normal(0, 0.3)  (softmax → 4-simplex)")
+    print(f"  φ prior:  LogNormal(0, 0.15)")
+    print(f"  NUTS:     depth=8, accept=0.8, dense_mass=False (reparam axis-aligns ridge)")
+    print(f"  ODE max_steps: 200K")
     print(f"  R(0): step {R0_IMMUNITY_PROFILE[0]}/{R0_IMMUNITY_PROFILE[4]}/"
           f"{R0_IMMUNITY_PROFILE[10]}/{R0_IMMUNITY_PROFILE[13]}")
 
@@ -200,42 +204,79 @@ def main():
         n_weeks=tgt["n_weeks"], min_rate=0.01,
         discretize_time=False,
     )
-    model = hira_model(loss_fn, lambda_phi=0.1)
+    # Build JAX NGM eigvalue closure (reparam derives β from R0+π+φ via NGM)
+    ngm_eigval_fn = make_ngm_eigvalue_fn(
+        pop_15=pop_15, rho=rho_emp,
+        C_home=matrices["C_home"], C_work=matrices["C_work"],
+        C_school=matrices["C_school"], C_other=matrices["C_other"],
+        R0_immunity=R0_IMMUNITY_PROFILE,
+        gamma=disease.gamma, seasonal_factor=1.7,
+    )
 
-    # Init from stepr0 (skip random outlier)
+    model = hira_model(loss_fn, ngm_eigval_fn=ngm_eigval_fn,
+                       n_seasons=len(SEASONS), lambda_phi=0.1)
+
+    # Reverse-derive init from stepr0 (β → R0/π via NGM)
     def load_stepr0(name):
         return np.array(json.load(open(OUTDIR / f"stepr0_{name}.json"))["best_vec"])
+
     init_names = ["warm", "bio_prior", "distributed", "home_dominant"]
     inits = []
     for name in init_names:
         v = load_stepr0(name)
+        phi_14 = v[:14]
+        phi_full = np.concatenate([phi_14[:5], [1.0], phi_14[5:]])
+        log_R0_init = np.zeros(len(SEASONS))
+        logit_pi_init = np.zeros((len(SEASONS), 4))
+        for si in range(len(SEASONS)):
+            beta_4 = v[17 + si*4 : 21 + si*4]
+            R0_s = float(ngm_eigval_fn(beta_4[0], beta_4[1], beta_4[2], beta_4[3],
+                                        jnp.asarray(phi_full)))
+            log_R0_init[si] = float(np.log(max(R0_s, 1e-3)))
+            beta_pos = np.clip(beta_4, 1e-6, None)
+            pi_s = beta_pos / beta_pos.sum()
+            lp = np.log(pi_s)
+            # center for softmax stability + clip to [-2, 2] so init never
+            # starts NUTS in the unphysical near-degenerate-simplex tail.
+            logit_pi_init[si] = np.clip(lp - lp.mean(), -2.0, 2.0)
         inits.append({
-            "phi": jnp.asarray(v[:14]),
-            "beta": jnp.asarray(v[17:33]),
+            "phi": jnp.asarray(phi_14),
+            "log_R0": jnp.asarray(log_R0_init),
+            "logit_pi": jnp.asarray(logit_pi_init),
         })
     init_params = {
         "phi": jnp.stack([d["phi"] for d in inits]),
-        "beta": jnp.stack([d["beta"] for d in inits]),
+        "log_R0": jnp.stack([d["log_R0"] for d in inits]),
+        "logit_pi": jnp.stack([d["logit_pi"] for d in inits]),
     }
     print(f"  init chains: {init_names}")
+    print(f"  init log_R0 (chain 0): {[f'{x:.3f}' for x in inits[0]['log_R0'].tolist()]}")
+    print(f"  init R0    (chain 0): {[f'{np.exp(x):.3f}' for x in inits[0]['log_R0'].tolist()]}")
 
     mlflow.set_tracking_uri(MLFLOW_URI)
-    mlflow.set_experiment("hira_calibration_m2_smoke_prior_v2")
-    with mlflow.start_run(run_name="smoke_v2_50w_50s_4chains"):
+    mlflow.set_experiment("hira_calibration_m2_smoke_prior_v7")
+    with mlflow.start_run(run_name="smoke_v7_reparam_logR0_simplex"):
         mlflow.log_params({
-            "num_warmup": 50, "num_samples": 50, "num_chains": 4,
+            "num_warmup": 200, "num_samples": 100, "num_chains": 4,
             "target_accept": 0.8, "max_tree_depth": 8,
+            "dense_mass": False,
+            "reparam": "A (log_R0 + simplex)",
             "gamma_source": src.key,
-            "beta_prior": "TN(0.04,0.04,[0.001,0.15])",
-            "phi_prior": "TN(1.0,0.3,[0.1,3.0])",
+            "log_R0_prior": "TN(log 1.5, 0.3, [log 0.8, log 2.8])",
+            "logit_pi_prior": "Normal(0, 0.3)",
+            "phi_prior": "LogNormal(0,0.15)",
             "ode_max_steps": 200_000,
             "R0_profile": "step [.10/.30/.45/.65]",
         })
 
         t0 = time.perf_counter()
-        kernel = NUTS(model, target_accept_prob=0.8, max_tree_depth=8)
-        mcmc = MCMC(kernel, num_warmup=50, num_samples=50, num_chains=4,
-                    chain_method="sequential", progress_bar=False)
+        # reparam A aligns the β·φ scale ridge to the log_R0 axis, so the
+        # remaining geometry is much closer to isotropic; diagonal mass should
+        # be sufficient (v6 needed dense to cope with cross-correlation).
+        kernel = NUTS(model, target_accept_prob=0.8, max_tree_depth=8,
+                      dense_mass=False)
+        mcmc = MCMC(kernel, num_warmup=200, num_samples=100, num_chains=4,
+                    chain_method="sequential", progress_bar=True)
         mcmc.run(random.PRNGKey(3), init_params=init_params,
                  extra_fields=("diverging",))
         wall = time.perf_counter() - t0
@@ -243,8 +284,8 @@ def main():
 
         samples = mcmc.get_samples(group_by_chain=True)
         extras = mcmc.get_extra_fields(group_by_chain=True)
-        phi = np.asarray(samples["phi"])      # (4, 50, 14)
-        beta = np.asarray(samples["beta"])    # (4, 50, 16)
+        phi = np.asarray(samples["phi"])      # (4, 100, 14)
+        beta = np.asarray(samples["beta"])    # (4, 100, 16)
         n_div = int(np.asarray(extras["diverging"]).sum())
 
         # Diagnostics
@@ -253,19 +294,43 @@ def main():
         beta_mean = beta.mean(axis=(0, 1))
         beta_max = float(beta.max())
         phi_min = float(phi.min()); phi_max = float(phi.max())
-        # cap thresholds aligned to actual prior bounds: φ in [0.5, 1.5], β in [0.001, 0.15]
-        n_near_phi_cap = int((phi > 1.42).sum())   # >95% of upper bound 1.5
+        # φ LogNormal(0,0.15) has unbounded support; track posterior in "unreasonable"
+        # tail (>2.0 = exp(4.6σ)) as a soft sanity check, not a wall.
+        n_near_phi_cap = int((phi > 2.0).sum())
         n_near_beta_cap = int((beta > 0.14).sum())
 
         idata = az.from_numpyro(mcmc)
-        # arviz API: use kind="diagnostics", no hdi_prob (fixed)
+        # r_hat / ess — v3 returned nan from az.summary; try az.rhat / az.ess
+        # directly (group_by_chain ensures chain dim present), then fall back to
+        # split-R-hat computed by hand on the (chains, draws, *) arrays.
+        rhat_max = float("nan"); ess_min = float("nan")
         try:
-            summary = az.summary(idata, kind="diagnostics")
-            rhat_max = float(summary["r_hat"].max())
-            ess_min = float(summary["ess_bulk"].min())
+            rhat = az.rhat(idata)
+            rhat_max = float(np.nanmax([float(rhat[v].values.max()) for v in rhat.data_vars]))
         except Exception as e:
-            print(f"  az.summary error: {e}")
-            rhat_max = float("nan"); ess_min = float("nan")
+            print(f"  az.rhat error: {e}")
+        try:
+            ess = az.ess(idata)
+            ess_min = float(np.nanmin([float(ess[v].values.min()) for v in ess.data_vars]))
+        except Exception as e:
+            print(f"  az.ess error: {e}")
+        if not np.isfinite(rhat_max):
+            # manual split-R-hat over phi+beta flattened (C, N, K)
+            def _split_rhat(x):  # x: (C, N, K)
+                C, N, K = x.shape
+                if N < 4: return float("nan")
+                half = N // 2
+                x2 = np.concatenate([x[:, :half], x[:, half:half*2]], axis=0)  # (2C, half, K)
+                m = x2.mean(1); v = x2.var(1, ddof=1)
+                W = v.mean(0); B = half * m.var(0, ddof=1)
+                vhat = (half - 1) / half * W + B / half
+                rhat = np.sqrt(np.where(W > 0, vhat / W, np.nan))
+                return float(np.nanmax(rhat))
+            try:
+                rhat_max = max(_split_rhat(phi), _split_rhat(beta))
+                print(f"  r_hat (manual split): {rhat_max:.3f}")
+            except Exception as e:
+                print(f"  manual rhat error: {e}")
 
         # Implied R0 from posterior samples (per chain mean β + φ)
         implied_R0_per_chain_season = []
@@ -291,9 +356,9 @@ def main():
                 "beta_max": float(beta[c].max()),
             })
 
-        print(f"\n  divergences: {n_div}/200")
+        print(f"\n  divergences: {n_div}/1200")
         print(f"  φ overall: mean={phi_mean.mean():.3f}  range=[{phi_min:.3f}, {phi_max:.3f}]")
-        print(f"  φ near cap 1.5 (>1.42): {n_near_phi_cap}/{phi.size} ({n_near_phi_cap/phi.size*100:.1f}%)")
+        print(f"  φ tail >2.0 (LogNormal sanity): {n_near_phi_cap}/{phi.size} ({n_near_phi_cap/phi.size*100:.1f}%)")
         print(f"  β overall: mean={beta_mean.mean():.4f}  max={beta_max:.4f}")
         print(f"  β near cap 0.15 (>0.14): {n_near_beta_cap}/{beta.size} ({n_near_beta_cap/beta.size*100:.1f}%)")
         print(f"  r_hat max: {rhat_max:.3f}  ess_min: {ess_min:.0f}")
@@ -320,7 +385,7 @@ def main():
             "0 divergences": n_div == 0,
             "β max < 0.15 (within bound)": beta_max < 0.15,
             "β not saturating cap (<5%)": n_near_beta_cap / beta.size < 0.05,
-            "φ not saturating cap 1.5 (<10%)": n_near_phi_cap / phi.size < 0.10,
+            "φ tail >2.0 (<5%, LogNormal sanity)": n_near_phi_cap / phi.size < 0.05,
             "Implied R0 ∈ [1.0, 2.5]": (R0_arr.min() >= 1.0 and R0_arr.max() <= 2.5),
             "r_hat < 1.5": rhat_max < 1.5,
         }
@@ -383,7 +448,7 @@ def main():
         print("=" * 60)
         print(f"[VERDICT] R0 mean={R0_arr.mean():.2f} "
               f"range=[{R0_arr.min():.2f},{R0_arr.max():.2f}]")
-        print(f"  divergences={int(n_div)}/200")
+        print(f"  divergences={int(n_div)}/1200")
         print(f"  beta max={beta_max:.4f} cap_frac={n_near_beta_cap/beta.size:.1%}")
         print(f"  phi range=[{phi_min:.3f},{phi_max:.3f}] "
               f"cap_frac={n_near_phi_cap/phi.size:.1%}")
