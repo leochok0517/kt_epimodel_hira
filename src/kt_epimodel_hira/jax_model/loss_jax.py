@@ -90,6 +90,33 @@ def poisson_nll_jax(
     return jnp.sum(weights * nll_pointwise)
 
 
+def nb_nll_jax(
+    obs: jnp.ndarray,        # (n_weeks, n_groups)
+    pred: jnp.ndarray,       # (n_weeks, n_groups)
+    weights: jnp.ndarray,    # (n_weeks, n_groups)
+    concentration: jnp.ndarray,    # scalar k (NegativeBinomial2 dispersion)
+    min_rate: float = 0.01,
+) -> jnp.ndarray:
+    """Weighted Negative-Binomial-2 NLL.
+
+    Parametrization: mean = pred, var = pred + pred² / k. Larger k → Poisson.
+    log P(y | μ, k) = lgamma(y+k) - lgamma(k) - lgamma(y+1)
+                    + k log(k/(k+μ)) + y log(μ/(k+μ))
+    """
+    pred_c = jnp.maximum(pred, min_rate)
+    k = concentration
+    log_p_fail = jnp.log(k) - jnp.log(k + pred_c)        # log(k/(k+μ))
+    log_p_succ = jnp.log(pred_c) - jnp.log(k + pred_c)   # log(μ/(k+μ))
+    logpmf = (
+        jax.lax.lgamma(obs + k)
+        - jax.lax.lgamma(k)
+        - jax.lax.lgamma(obs + 1.0)
+        + k * log_p_fail
+        + obs * log_p_succ
+    )
+    return -jnp.sum(weights * logpmf)
+
+
 def single_season_nll_jax(
     initial_state: jnp.ndarray,
     obs_hira: jnp.ndarray,           # (n_weeks, 6)
@@ -131,6 +158,52 @@ def gamma_triple_to_15(gamma_child, gamma_adult, gamma_elder) -> jnp.ndarray:
         jnp.full(9, gamma_adult),
         jnp.full(2, gamma_elder),
     ])
+
+
+def make_multi_season_loss_fn_nb(
+    *,
+    initial_states: Sequence[jnp.ndarray],
+    obs_hira_list: Sequence[jnp.ndarray],
+    weights_hira_list: Sequence[jnp.ndarray],
+    shared_static: dict,
+    n_weeks: int = 52,
+    min_rate: float = 0.01,
+    discretize_time: bool = False,
+):
+    """Multi-season NB loss. Closure signature: ``(vec_33, concentration) → NLL``.
+
+    Identical forward sim and HIRA conversion as the Poisson factory; only the
+    observation likelihood is swapped for Negative-Binomial-2. The dispersion
+    `concentration` is supplied externally so the numpyro model can sample it.
+    """
+    n_seasons = len(initial_states)
+
+    def loss(vec_33, concentration):
+        phi = vec_33[:14]
+        gamma_3 = vec_33[14:17]
+        phi_full = jnp.concatenate([phi[:5], jnp.array([1.0]), phi[5:]])
+        gamma_15 = gamma_triple_to_15(gamma_3[0], gamma_3[1], gamma_3[2])
+
+        total = 0.0
+        for i in range(n_seasons):
+            beta_4 = vec_33[17 + i*4 : 21 + i*4]
+            kw = dict(shared_static)
+            kw["beta_h"] = beta_4[0]
+            kw["beta_w"] = beta_4[1]
+            kw["beta_s"] = beta_4[2]
+            kw["beta_o"] = beta_4[3]
+            kw["phi_susc"] = phi_full
+            states = simulate_jax(initial_states[i], **kw,
+                                   discretize_time=discretize_time)
+            inc_15 = daily_new_infection_by_age_jax(states)
+            pred_hira = simulation_to_hira_by_age_jax(inc_15, gamma_15, n_weeks=n_weeks)
+            total = total + nb_nll_jax(
+                obs_hira_list[i], pred_hira, weights_hira_list[i],
+                concentration=concentration, min_rate=min_rate,
+            )
+        return total
+
+    return loss
 
 
 def make_multi_season_loss_fn(

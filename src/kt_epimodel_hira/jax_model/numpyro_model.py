@@ -192,3 +192,67 @@ def hira_model(
 
     model.gamma_source = get_active_source()
     return model
+
+
+def hira_model_nb(
+    loss_fn_nb,
+    *,
+    ngm_eigval_fn,
+    n_seasons: int = 4,
+):
+    """Reparam A model with Negative-Binomial observation noise.
+
+    Adds a single global concentration parameter ``phi_nb`` (NB dispersion):
+        obs ~ NegativeBinomial2(mean=pred, concentration=phi_nb).
+    ``loss_fn_nb`` is the NB-weighted NLL closure with signature
+    ``(vec_33, concentration) → scalar``.
+    """
+    gamma_active = get_active_gamma()
+    gamma_child_fixed = float(gamma_active[CHILD_IDX[0]])
+    gamma_adult_fixed = float(gamma_active[ADULT_IDX[0]])
+    gamma_elder_fixed = float(gamma_active[ELDER_IDX[0]])
+
+    def model():
+        log_R0 = numpyro.sample(
+            "log_R0",
+            dist.TruncatedNormal(
+                jnp.log(1.5), 0.3,
+                low=jnp.log(0.8), high=jnp.log(2.8),
+            ).expand([n_seasons]).to_event(1),
+        )
+        R0 = jnp.exp(log_R0)
+
+        logit_pi = numpyro.sample(
+            "logit_pi",
+            dist.Normal(0.0, 0.3).expand([n_seasons, 4]).to_event(2),
+        )
+        pi = jax.nn.softmax(logit_pi, axis=-1)
+
+        # φ FIXED at 1.0 (v7b/v8/v9 confirmed non-identifiability)
+        phi = jnp.ones(14)
+        phi_full = jnp.ones(15)
+
+        # NB dispersion. Larger phi_nb → closer to Poisson. HalfNormal(10) is
+        # weakly informative; data picks the right level.
+        phi_nb = numpyro.sample("phi_nb", dist.HalfNormal(10.0))
+
+        # Derive β per season via 1-homogeneous NGM inversion
+        def derive_one(r, p):
+            return derive_beta_from_R0_simplex(ngm_eigval_fn, r, p, phi_full)
+
+        beta_per_season = jax.vmap(derive_one)(R0, pi)
+        beta_16 = beta_per_season.reshape(-1)
+
+        gamma_3 = jnp.array([
+            gamma_child_fixed, gamma_adult_fixed, gamma_elder_fixed,
+        ])
+        numpyro.deterministic("R0", R0)
+        numpyro.deterministic("pi", pi)
+        numpyro.deterministic("beta", beta_16)
+
+        vec_33 = jnp.concatenate([phi, gamma_3, beta_16])
+        nll = loss_fn_nb(vec_33, phi_nb)
+        numpyro.factor("likelihood_nb", -nll)
+
+    model.gamma_source = get_active_source()
+    return model

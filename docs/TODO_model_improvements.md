@@ -66,7 +66,17 @@
 
 ---
 
-## TODO-3: 관측 노이즈 모델 — Poisson → 과분산 (우선순위: 중-높음)
+## TODO-3: 관측 노이즈 모델 — Poisson → 과분산 ✅ 완료 (2026-06-10)
+
+**결과**: NB(2) 적용, coverage 12%→**95.2%**, r_hat 2.38→**1.02**, ess 5→581,
+R0 평균 보존 (1.96→1.90), CI 현실화 (3–4%). `phi_nb` = 1.44 [1.30, 1.59] 식별.
+부가: 2017–18 channel swap (practical 비식별) 까지 해소 (좁은 Poisson likelihood가
+원인이었음).
+
+---
+
+### (배경 — 원안 보존)
+
 
 ### 배경 (posterior predictive 발견)
 production posterior predictive: peak 시점·형태는 잘 재현하나

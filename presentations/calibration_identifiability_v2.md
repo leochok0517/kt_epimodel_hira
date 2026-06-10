@@ -192,26 +192,26 @@ $$
 
 ---
 
-# 8. <span class="green"> 결과 ①</span> R0 식별 (production NUTS)
+# 8. <span class="green">결과 ①</span> R0 식별 (production NUTS, NB 관측모델)
 
-**Production NUTS** (300 warmup + 300 sample × 4 chain, wall 6h 25min, divergence 0/2400)
+**Production NUTS** (NB 관측모델, 200 warmup + 200 sample × 4 chain, wall 41분)
 
 | 시즌 | R0 mean | 95% CI | 폭 |
 |---|---|---|---|
-| 2017–18 | **1.90** | [1.83, 1.97] | 7% (2-mode) |
-| 2018–19 | **2.064** | [2.063, 2.065] | 0.1% |
-| 2019–20 | **1.956** | [1.956, 1.957] | 0.05% |
-| 2022–23 | **1.930** | [1.928, 1.931] | 0.2% |
+| 2017–18 | **1.83** | [1.80, 1.87] | 4% |
+| 2018–19 | **1.96** | [1.94, 2.00] | 3% |
+| 2019–20 | **1.94** | [1.91, 1.97] | 3% |
+| 2022–23 | **1.87** | [1.83, 1.91] | 4% |
 
 <br>
 
-**4 chain 전체**: R0 mean **1.96**, range **[1.80, 2.07]**, 모두 전형적 seasonal flu (1–2.5)
-**3 / 4 시즌**: 95% CI 0.5% 이내 — 매우 정밀
-**2017–18 만**: home ↔ other 채널 분해 약한 2-mode (R0 자체는 7% 범위)
+**전체**: R0 mean **1.90**, range **[1.78, 2.01]** — 전형적 seasonal flu (1–2.5)
+**수렴**: divergence **0/1600**, r_hat **1.02**, ess **581**
+**4 시즌 모두**: 95% CI 3–4% — 현실적 정책 신뢰구간
 
 <div class="blue center" style="margin-top: 8px">
 
-R0 가 **primary axis** 임을 production posterior 로 확정 (저장: nc + npz + json)
+R0 가 **primary axis** 임을 4 chain 일치 + 깨끗한 수렴으로 확정
 
 </div>
 
@@ -219,18 +219,47 @@ R0 가 **primary axis** 임을 production posterior 로 확정 (저장: nc + npz
 
 # 8b. <span class="green">결과 ①′</span> Posterior predictive — 연령별 fit (피드백 3)
 
-![w:1000](figures/posterior_predictive.png)
+![w:1000](figures/posterior_predictive_nb.png)
 
-**구성**: 4 시즌 × 6 HIRA 연령군. **빨간 점** = 관측 청구, **파란 선·띠** = posterior 중앙값 + 95% credible (parameter + Poisson 노이즈)
+**구성**: 4 시즌 × 6 HIRA 연령군. 빨간 점 = 관측 청구, 파란 선·띠 = posterior 중앙값 + 95% credible (parameter + **NB 관측 노이즈**)
 
 **판독**:
-- 모든 연령군 · 시즌에서 **peak 시점과 형태** 재현 ✅
-- 일부 연령군은 모델이 약간 더 높고 이른 peak (residual 한계, R0 식별과 무관)
-- 95% 띠가 매우 좁음 → posterior parameter 가 매우 정밀 (R0 4 chain 일치 결과)
+- **95% coverage = 95.2%** (nominal 95% 와 일치) — 모든 시즌·연령
+- 연령별 coverage: 0–5 89%, 6–11 99%, 12–17 92%, 18–44 99%, 45–64 99%, 65+ 93%
+- 모든 panel에서 peak 시점·형태·진폭 재현
 
 <div class="blue center" style="margin-top: 8px">
 
-**모델 구조 (4채널 contact + 계단 R(0) + γ CDC + φ=1.0) 가 데이터 재현**
+**모델 구조 (4채널 contact + 계단 R(0) + γ CDC + φ=1.0 + NB 관측) 가 데이터 재현**
+
+</div>
+
+---
+
+# 8c. <span class="green">결과 ①″</span> 관측모델: Poisson → NB
+
+**문제**: Poisson 가정 (분산=평균) 으로는 청구 데이터 변동 못 잡음
+- 주별 변동·보고 지연·요일 효과 → 실측 **분산 > 평균** (과분산)
+- 결과: posterior 띠 좁음, coverage 12%, 거기에 수렴까지 악화 (r_hat 2.38)
+
+**해법**: 관측을 **Negative Binomial-2** 로
+$$\text{obs} \sim \text{NegBin}\!\left(\mu = \text{pred},\; \text{Var} = \mu + \mu^2/k\right)$$
+
+**결과**:
+
+| 지표 | Poisson | **NB** |
+|---|---|---|
+| 95% coverage | 12% | **95%** |
+| r_hat max | 2.38 | **1.02** |
+| ess_min | 5 | **581** |
+| R0 mean | 1.96 | 1.90 (거의 동일) |
+| wall | 6h 25min | **41분** |
+
+**NB 분산 파라미터** `phi_nb = 1.44 [1.30, 1.59]` — 식별 (r_hat 1.02)
+
+<div class="blue center" style="margin-top: 4px">
+
+NB가 **coverage 와 수렴을 동시에 해결** — 좁은 Poisson likelihood 가 채널 mix ridge 에 chain 들을 가둔 것까지 풀림
 
 </div>
 
@@ -316,9 +345,14 @@ R0 가 **primary axis** 임을 production posterior 로 확정 (저장: nc + npz
 
 **보너스** (production 부산물): 채널 mix posterior — work 채널 ≈ 0 (전 시즌), school + other 주력. sick-leave / 학교결석 정책 채널 근거.
 
-**알려진 한계 (원인 + 해결 방향)**:
-1. Posterior predictive **coverage 12%** (nominal 95%): posterior 가 매우 정밀해 띠가 좁음 + 관측 노이즈를 Poisson 으로 단순화 (청구 데이터의 과분산 미반영). peak 시점·형태 자체는 잘 재현 (시각). → 관측모델 **Negative Binomial** 확장 시 개선 (TODO-3). **R0 추정 자체는 견고** (관측모델과 무관).
-2. **2017–18 시즌 home ↔ other channel swap** (β_h ↔ β_o trade-off, R0 7% 범위). 정책 채널 (work / school) 과 무관.
+**식별성 정리** — 두 종류의 비식별, 다른 해법:
+
+| | 종류 | 해법 |
+|---|---|---|
+| φ · γ (곱셈 ridge) | **구조적** (모델 구조 자체) | **외부 고정** (field knowledge) |
+| 2017–18 채널 mix swap | **practical** (좁은 Poisson likelihood) | **NB 관측모델** 로 자동 해소 |
+
+→ 발표 시점에서 두 종류 모두 처리 완료. R0 식별 + coverage 95% + 깨끗한 수렴.
 
 ---
 
@@ -329,8 +363,8 @@ R0 가 **primary axis** 임을 production posterior 로 확정 (저장: nc + npz
 
 - 곱셈 결합 β·φ·γ → **R0 (β) 추정 / γ·φ 외부 고정**
 - **R(0) 계단**으로 노인 과대생성 + γ 흡수 해결 (1.43 → 0.99)
-- **Production NUTS**: R0 시즌별 95% CI 산출 (mean 1.96, divergence 0)
-- **Posterior predictive**: 4 시즌 × 6 연령 peak 재현 — 모델 구조 적절
-- **φ 비식별 실증** → 점고정으로 차원 제거 (정직한 통계 처리)
+- **Production NB NUTS**: R0 시즌별 95% CI (mean 1.90, divergence 0, r_hat 1.02)
+- **Posterior predictive coverage 95.2%** — 모델 구조가 데이터 재현
+- **두 종류 비식별 모두 처리**: 구조적 (γ·φ 외부 고정) + practical (NB 가 자동 해소)
 
 
