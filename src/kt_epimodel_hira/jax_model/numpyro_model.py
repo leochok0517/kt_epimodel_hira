@@ -157,16 +157,16 @@ def hira_model(
         )
         pi = jax.nn.softmax(logit_pi, axis=-1)
 
-        # φ: per-age susceptibility multipliers. LogNormal(0, 0.15) keeps
-        # median=1.0 (anchor φ_5≡1.0 inserted in loss_fn) and ±15% Cauchemez.
-        phi = numpyro.sample(
-            "phi",
-            dist.LogNormal(0.0, 0.15).expand([14]).to_event(1),
-        )
-        numpyro.factor("phi_smooth", -lambda_phi * jnp.sum(jnp.diff(phi) ** 2))
-
-        # Build φ_full (15,) with φ_5 = 1.0 anchor (same as loss_jax composition)
-        phi_full = jnp.concatenate([phi[:5], jnp.array([1.0]), phi[5:]])
+        # φ FIXED at uniform 1.0 (per-contact susceptibility neutral). v7b/v8/v9
+        # showed φ is genuinely non-identifiable: prior tightening (σ 0.15→0.05)
+        # didn't help (v8 r_hat 4.43), and unified init (v9) still produced
+        # chain-split posterior φ ranging 1.75–2.29 → likelihood surface itself
+        # is multimodal in φ. Per-age transmission differences are already
+        # captured by the 4-channel contacts + step R(0) profile. φ is held
+        # constant at 1.0; the φ_5≡1.0 anchor in loss_fn is now trivially
+        # consistent. phi_smooth penalty is dropped (no longer sampled).
+        phi = jnp.ones(14)
+        phi_full = jnp.ones(15)
 
         # Derive β per season via 1-homogeneous NGM inversion
         def derive_one(r, p):

@@ -63,3 +63,33 @@
 2. TODO-1 (백신 S+R) — 단순 수정, R(0) 일관성, 노인 정책 정확도
 3. TODO-2 (post-pandemic R0) — 검증/sensitivity
 4. 둘 다 발표/논문 limitation·future work에 기재
+
+---
+
+## TODO-3: 관측 노이즈 모델 — Poisson → 과분산 (우선순위: 중-높음)
+
+### 배경 (posterior predictive 발견)
+production posterior predictive: peak 시점·형태는 잘 재현하나
+95% coverage 12.2% (nominal 95% 대비 낮음).
+
+### 원인
+1. posterior parameter 매우 정밀 (R0 CI<0.1%) → 예측 띠 좁음
+2. ★ 관측 노이즈를 Poisson으로 단순화 → 청구 데이터 과분산 미반영
+   - 실제 청구: 주별 변동, 보고 지연, 요일효과 → 분산 > 평균
+   - Poisson(분산=평균)은 이를 과소평가 → 띠 좁아 coverage 낮음
+3. peak가 obs보다 약간 높고 이름 (systematic residual)
+   - seasonal peak_day 고정(105)과 시즌별 실제 peak 차이 가능
+
+### 접근
+- 관측 모델 Poisson → Negative Binomial (과분산 파라미터 추가)
+  → 예측 띠가 적절히 넓어져 coverage 개선 예상
+- (옵션) peak_day 시즌별 조정 — 단 amplitude는 β와 비식별이니 고정
+  (timing만, 곱 비식별 주의)
+
+### 주의
+- R0 추정 자체는 견고 (3/4 시즌 CI<0.1%) — 이건 관측모델 개선과 무관
+- NB 과분산 파라미터도 식별성 점검 필요 (추가 자유도)
+
+### 검증
+- NB 적용 후 coverage 95% 근처 회복되는지
+- R0 추정 불변 확인 (관측모델 바꿔도 R0 같아야)
