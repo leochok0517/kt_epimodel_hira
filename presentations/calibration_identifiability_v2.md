@@ -70,15 +70,15 @@ $$
 - 보이는 부분 = HIRA 청구 (분자, 측정 가능)
 - 숨은 부분 = 무증상 + 자가관리 + 미진료 (분모, 측정 불가)
 
-**노인 100명 감염, γ=0.25 가정**:
-- 청구로 잡힘: **25명**
-- 못 잡힘: **75명** (만성질환 혼재 / 자가관리 / 응급실 미경유)
+**γ = level × 연령 상대비**:
+- **level**: Jung et al. (2025) q = 0.67 (감염 → 증상) 에서 무증상·미청구 제외 → **0.6** (비식별 anchor, R0 흡수 차원)
+- **연령 상대비**: 데이터가 식별 가능한 차원 (sweep 에서 CDC 비율 NLL 최저 확인)
 
-| 연령군 | γ (CDC 2015) | 의미 |
+| 연령군 | CDC 상대비 | γ (level 0.6 적용) |
 |---|---|---|
-| 어린이 | **0.40** | 부모가 데려옴 → 잘 잡힘 |
-| 성인 | **0.18** | 자가관리 ↑ |
-| 노인 | **0.25** | 합병증 동반진단 + 백신 효과 분리 |
+| 어린이 | **1.45** | 0.87 |
+| 성인 | **0.65** | 0.39 |
+| 노인 | **0.90** | 0.54 |
 
 ---
 
@@ -192,26 +192,25 @@ $$
 
 ---
 
-# 8. <span class="green">결과 ①</span> R0 식별 (production NUTS, NB 관측모델)
+# 8. <span class="green">결과 ①</span> R0 식별 (production NUTS, 채널 정상화)
 
-**Production NUTS** (NB 관측모델, 200 warmup + 200 sample × 4 chain, wall 41분)
+**Production NUTS** (NB 관측모델 + 채널 정상화, 300 warmup + 300 sample × 4 chain, wall 64분)
 
-| 시즌 | R0 mean | 95% CI | 폭 |
-|---|---|---|---|
-| 2017–18 | **1.83** | [1.80, 1.87] | 4% |
-| 2018–19 | **1.96** | [1.94, 2.00] | 3% |
-| 2019–20 | **1.94** | [1.91, 1.97] | 3% |
-| 2022–23 | **1.87** | [1.83, 1.91] | 4% |
+| 시즌 | R0 mean | 95% CI |
+|---|---|---|
+| 2017–18 | **1.79** | [1.74, 1.83] |
+| 2018–19 | **1.95** | [1.91, 1.98] |
+| 2019–20 | **1.90** | [1.85, 1.95] |
+| 2022–23 | **1.74** | [1.68, 1.84] |
 
 <br>
 
-**전체**: R0 mean **1.90**, range **[1.78, 2.01]** — 전형적 seasonal flu (1–2.5)
-**수렴**: divergence **0/1600**, r_hat **1.02**, ess **581**
-**4 시즌 모두**: 95% CI 3–4% — 현실적 정책 신뢰구간
+**전체**: R0 mean **1.84**, range **[1.68, 1.98]** — 전형적 seasonal flu (1–2.5)
+**수렴**: divergence **0/2400**, r_hat **1.007**, ess **908**
 
 <div class="blue center" style="margin-top: 8px">
 
-R0 가 **primary axis** 임을 4 chain 일치 + 깨끗한 수렴으로 확정
+4 chain 일치 + 완벽 수렴 — R0 가 데이터로 식별되는 primary axis
 
 </div>
 
@@ -265,7 +264,30 @@ NB가 **coverage 와 수렴을 동시에 해결** — 좁은 Poisson likelihood 
 
 ---
 
-# 9. <span class="green"> 결과 ②</span> φ 비식별 실증
+# 8d. <span class="green">결과 ①‴</span> 4 채널 전파 분해 — 비식별 진단 후 정상화
+
+**시즌별 채널 mix** (NB + work:other 비율 고정):
+
+| 시즌 | home | **work** | school | other |
+|---|---|---|---|---|
+| 2017–18 | 0.36 | **0.12** | 0.31 | 0.22 |
+| 2018–19 | 0.23 | **0.11** | 0.45 | 0.21 |
+| 2019–20 | 0.23 | **0.11** | 0.44 | 0.21 |
+| 2022–23 | 0.27 | **0.15** | 0.30 | 0.28 |
+
+**진단·해소된 3 종 비식별**:
+
+| 증상 | 원인 | 외부 근거 해소 |
+|---|---|---|
+| home ≈ 0 | γ_adult 절대값 너무 높음 → home β 가 성인 보정 | **γ level = 0.6** (Jung q=0.67 − 무증상/미청구) × CDC 연령 상대비 |
+| **work ≈ 0** | work/other 둘 다 성인 타겟 + HIRA 6 연령군 → 분해 정보 부족 | **work:other = 0.349 : 0.651** (NIMS 접촉 row-sum) 고정 |
+| school 0.62 과대 | work 흡수 (둘 다 R0 ↑ 효율 비슷) | 위 두 해소로 자동 교정 (0.62 → 0.30–0.45) |
+
+<div class="blue center" style="margin-top: 6px">
+
+데이터가 보는 것(home/school/덩어리 크기) 추정 + 못 보는 것(분배·level) 외부 근거 → single-channel dominance 없음, 역학적으로 타당
+
+</div>
 
 **같은 sample 의 φ posterior**:
 
@@ -330,29 +352,27 @@ NB가 **coverage 와 수렴을 동시에 해결** — 좁은 Poisson likelihood 
 # 12. 현재 진행 + 향후
 
 **현재 도달점** (완료):
-- ✅ **β·R0 추정 완료** (production NUTS, 시즌별 95% CI 산출, divergence 0)
-- ✅ **γ 외부 고정** (CDC 2015 + `gamma_registry` 객체화 → 한국 데이터 교체 가능)
+- ✅ **β·R0 추정 완료** (NB + 채널 정상화 production, divergence 0, r_hat 1.007)
+- ✅ **γ = level(0.6) × CDC 상대비** — Jung 2025 정합 + 데이터 식별 (객체화)
 - ✅ **φ = 1.0 고정** (3중 비식별 확정 후, 점고정)
-- ✅ **Posterior predictive 검증** — 연령별 peak 재현 (피드백 3)
+- ✅ **4 채널 mix 정상화** (home 0.27 / work 0.12 / school 0.40 / other 0.22)
+- ✅ **Posterior predictive 95.2% coverage**
+
+**식별성 정리** — 데이터가 보는 것 / 못 보는 것:
+
+| 차원 | 정체 | 처리 |
+|---|---|---|
+| **R0 (β 스케일)** | 데이터 식별 (peak·진폭) | **NUTS 추정** ✅ |
+| home / school / (work+other) 덩어리 | 연령 곡선이 식별 | **NUTS 추정** ✅ |
+| γ level (전역 곱셈) | 비식별 (R0 흡수) | **0.6 anchor** (Jung) |
+| γ 연령 상대비 | 데이터 식별 | **NUTS 검증 (sweep)** ✅ |
+| **work : other 분배** | practical 비식별 (둘 다 성인) | **NIMS 접촉비 0.349 고정** |
+| φ_age | 구조적 비식별 (v7b/v8/v9) | **1.0 점고정** |
 
 **다음 (Stage 4–5)**:
-1. **수도권 metapop 확장** — 1,154 행정동
-   - 회사 밀집 vs 주거 밀집 → sick-leave 정책 채널별 효과 (work / school 분리)
-   - 출퇴근 mobility 영향
-2. **ICER + PSA**
-   - γ_source PSA, φ Cauchemez ±15%, R0 posterior CI → 정책 신뢰구간
-   - 백신 vs sick-leave vs 학교결석 정책 비교
-
-**보너스** (production 부산물): 채널 mix posterior — work 채널 ≈ 0 (전 시즌), school + other 주력. sick-leave / 학교결석 정책 채널 근거.
-
-**식별성 정리** — 두 종류의 비식별, 다른 해법:
-
-| | 종류 | 해법 |
-|---|---|---|
-| φ · γ (곱셈 ridge) | **구조적** (모델 구조 자체) | **외부 고정** (field knowledge) |
-| 2017–18 채널 mix swap | **practical** (좁은 Poisson likelihood) | **NB 관측모델** 로 자동 해소 |
-
-→ 발표 시점에서 두 종류 모두 처리 완료. R0 식별 + coverage 95% + 깨끗한 수렴.
+1. **수도권 metapop 1,154 행정동 forward** — 정책 시나리오 (sick_leave / school_closure 등)
+2. **민감도 분석** — work:other 비율 ([0.25, 0.35, 0.50]) → sick_leave 효과 robustness
+3. **ICER + PSA** — γ_source 교체 + R0 posterior CI 펼침
 
 ---
 
@@ -361,10 +381,10 @@ NB가 **coverage 와 수렴을 동시에 해결** — 좁은 Poisson likelihood 
 
 # 13. 요약
 
-- 곱셈 결합 β·φ·γ → **R0 (β) 추정 / γ·φ 외부 고정**
-- **R(0) 계단**으로 노인 과대생성 + γ 흡수 해결 (1.43 → 0.99)
-- **Production NB NUTS**: R0 시즌별 95% CI (mean 1.90, divergence 0, r_hat 1.02)
-- **Posterior predictive coverage 95.2%** — 모델 구조가 데이터 재현
-- **두 종류 비식별 모두 처리**: 구조적 (γ·φ 외부 고정) + practical (NB 가 자동 해소)
+- **비식별을 차원별로 진단·해소**: 데이터가 보는 것은 추정, 못 보는 것은 외부 근거
+- **R(0) 계단** → 노인 과대 + γ 흡수 해결 (1.43 → 0.99)
+- **γ = 0.6 × CDC 상대비** (Jung q=0.67 정합), **φ = 1.0 점고정**
+- **work : other = 0.349 : 0.651** (NIMS 접촉비) — 4 채널 mix 정상화
+- **Production NB**: R0 1.84 [1.68, 1.98], r_hat 1.007, coverage 95.2%
 
 

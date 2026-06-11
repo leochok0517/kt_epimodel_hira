@@ -194,6 +194,79 @@ def hira_model(
     return model
 
 
+def hira_model_nb_wo(
+    loss_fn_nb,
+    *,
+    ngm_eigval_fn,
+    n_seasons: int = 4,
+    work_ratio: float = 17.03 / (17.03 + 31.77),  # = 0.349 (NIMS row-sum)
+    gamma_3_override=None,
+):
+    """NB model with the work:other split fixed by NIMS contact row-sums.
+
+    work and other are nearly non-identifiable from HIRA's 6-age aggregation
+    (D4 NLL gap ~6.5K vs noise scale ~80K). To resolve, we collapse the simplex
+    to 3 free dims (home, school, work+other combined) and split the combined
+    mass by a fixed channel-contact ratio (NIMS row-sums work 17.03 vs other
+    31.77 → work_ratio ≈ 0.349). γ can be overridden (e.g. level=0.6 × CDC).
+    """
+    if gamma_3_override is None:
+        gamma_active = get_active_gamma()
+        gamma_3_const = jnp.array([
+            float(gamma_active[CHILD_IDX[0]]),
+            float(gamma_active[ADULT_IDX[0]]),
+            float(gamma_active[ELDER_IDX[0]]),
+        ])
+    else:
+        gamma_3_const = jnp.asarray(gamma_3_override, dtype=jnp.float64)
+
+    def model():
+        log_R0 = numpyro.sample(
+            "log_R0",
+            dist.TruncatedNormal(
+                jnp.log(1.5), 0.3,
+                low=jnp.log(0.8), high=jnp.log(2.8),
+            ).expand([n_seasons]).to_event(1),
+        )
+        R0 = jnp.exp(log_R0)
+
+        # 3-simplex per season: (home, school, work+other combined)
+        logit_pi3 = numpyro.sample(
+            "logit_pi3",
+            dist.Normal(0.0, 0.3).expand([n_seasons, 3]).to_event(2),
+        )
+        pi3 = jax.nn.softmax(logit_pi3, axis=-1)
+        pi_home = pi3[..., 0:1]
+        pi_school = pi3[..., 1:2]
+        pi_wo = pi3[..., 2:3]
+        pi_work = pi_wo * work_ratio
+        pi_other = pi_wo * (1.0 - work_ratio)
+        # reassemble to (h, w, s, o) matching loss layout
+        pi_full = jnp.concatenate([pi_home, pi_work, pi_school, pi_other], axis=-1)
+
+        phi = jnp.ones(14)
+        phi_full = jnp.ones(15)
+
+        phi_nb = numpyro.sample("phi_nb", dist.HalfNormal(10.0))
+
+        def derive_one(r, p):
+            return derive_beta_from_R0_simplex(ngm_eigval_fn, r, p, phi_full)
+        beta_per_season = jax.vmap(derive_one)(R0, pi_full)
+        beta_16 = beta_per_season.reshape(-1)
+
+        numpyro.deterministic("R0", R0)
+        numpyro.deterministic("pi", pi_full)
+        numpyro.deterministic("beta", beta_16)
+        numpyro.deterministic("gamma_3", gamma_3_const)
+
+        vec_33 = jnp.concatenate([phi, gamma_3_const, beta_16])
+        nll = loss_fn_nb(vec_33, phi_nb)
+        numpyro.factor("likelihood_nb_wo", -nll)
+
+    model.gamma_source = get_active_source()
+    return model
+
+
 def hira_model_nb(
     loss_fn_nb,
     *,
