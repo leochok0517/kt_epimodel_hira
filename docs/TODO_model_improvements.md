@@ -103,3 +103,54 @@ production posterior predictive: peak 시점·형태는 잘 재현하나
 ### 검증
 - NB 적용 후 coverage 95% 근처 회복되는지
 - R0 추정 불변 확인 (관측모델 바꿔도 R0 같아야)
+
+---
+
+## TODO-4: 계절성 forcing 재검토 (우선순위: 높음) — 채널 민감도로 확정
+
+### 배경
+school_closure 가 49 개 채널 조합 전부에서 80%+ averted (43/49 >90%, 0/49
+<80%). 채널 분배와 무관 → 원인은 **계절성 phase-transition**.
+cosine amp=0.7: peak window 6-8 주만 R_eff>1, 작은 개입도 epidemic 차단.
+
+### ★ 먼저 확인: calibration ↔ forward 계절성 정합
+- calibration (슬라이드 16) 은 Gaussian 계절성 fit (amp/base/σ/peak_day)
+- forward (Step C) 는 cosine amp=0.7 사용
+- ★ 둘이 다르면 절벽이 "불일치 버그" 일 수 있음 (구조 문제 아니라)
+- 먼저 calibration 이 쓴 계절성 함수와 forward 계절성 일치 확인
+  → 불일치면 forward 를 calibration 계절성으로 맞춤 (버그 수정)
+  → 일치하는데도 절벽이면 구조 문제 (amp sweep)
+
+### 접근 (정합 확인 후)
+- amp sweep [0.3, 0.5, 0.7] → school_closure 효과 변동
+- 문헌 인플루엔자 R_eff 시계열과 비교 (amp 0.3-0.5 가능성)
+- peak window 폭이 현실적인지
+
+---
+
+## TODO-5: home spillover 모델 재검토 (우선순위: 높음)
+
+### 배경
+sick_leave 효과 부호가 work π + home π 에 의존 (채널 민감도 발견).
+work 격리 → `home FOI += κ·ρ·(1-p_work)` → home 전파 증가가 work 감소와 경쟁.
+work π 작으면 (home 상대 큼) spillover 가 이겨 역효과 (음수).
+
+### 접근
+- spillover κ (0-19: 0.42, 20-69: 0.60) 적정값 검토
+- 한국 가정 격리 시 실제 가구 전파 증가율 문헌
+- κ sweep → sick_leave 부호 안정성
+- spillover off vs on 비교 (효과 크기)
+
+---
+
+## TODO-6: work:other 비율 외부 추정 (우선순위: 높음) — 신규
+
+### 배경
+sick_leave 결론을 좌우하는 핵심 가정. 현재 NIMS row-sum (0.349) 단일값.
+work π=0.11 (0.349 기준) → sick_leave 음수. work π ≥ 0.25 면 양수.
+→ **비율 가정이 정책 부호를 바꿈**. 단일값 정당화 약함.
+
+### 접근
+- KOSIS 직장 출근 패턴, 한국 인플루엔자 surveillance
+- 직장 전파 비중 문헌 (한국 / 유사 국가)
+- 확정 어려우면 → 민감도 범위로 보고 ("+6.7% ~ −7.2%, 비율 의존")

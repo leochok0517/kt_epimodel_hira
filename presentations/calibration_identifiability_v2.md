@@ -289,6 +289,10 @@ NB가 **coverage 와 수렴을 동시에 해결** — 좁은 Poisson likelihood 
 
 </div>
 
+---
+
+# 9. <span class="green">결과 ②</span> φ 비식별 실증
+
 **같은 sample 의 φ posterior**:
 
 | chain | φ[0] (0–4세) | 해석 |
@@ -349,42 +353,59 @@ NB가 **coverage 와 수렴을 동시에 해결** — 좁은 Poisson likelihood 
 
 ---
 
-# 12. 현재 진행 + 향후
+# 12. 정책 효과 — 채널 민감도 분석
 
-**현재 도달점** (완료):
-- ✅ **β·R0 추정 완료** (NB + 채널 정상화 production, divergence 0, r_hat 1.007)
-- ✅ **γ = level(0.6) × CDC 상대비** — Jung 2025 정합 + 데이터 식별 (객체화)
-- ✅ **φ = 1.0 고정** (3중 비식별 확정 후, 점고정)
-- ✅ **4 채널 mix 정상화** (home 0.27 / work 0.12 / school 0.40 / other 0.22)
-- ✅ **Posterior predictive 95.2% coverage**
+49 개 합리적 채널 mix × 3 시나리오 forward (R0=1.90 고정)
 
-**식별성 정리** — 데이터가 보는 것 / 못 보는 것:
+![w:830](figures/channel_sensitivity.png)
 
-| 차원 | 정체 | 처리 |
+**두 정책의 성격이 정반대**:
+
+| 정책 | averted 범위 (49 채널) | 판정 |
 |---|---|---|
-| **R0 (β 스케일)** | 데이터 식별 (peak·진폭) | **NUTS 추정** ✅ |
-| home / school / (work+other) 덩어리 | 연령 곡선이 식별 | **NUTS 추정** ✅ |
-| γ level (전역 곱셈) | 비식별 (R0 흡수) | **0.6 anchor** (Jung) |
-| γ 연령 상대비 | 데이터 식별 | **NUTS 검증 (sweep)** ✅ |
-| **work : other 분배** | practical 비식별 (둘 다 성인) | **NIMS 접촉비 0.349 고정** |
-| φ_age | 구조적 비식별 (v7b/v8/v9) | **1.0 점고정** |
+| **학교 폐쇄** (p_school=0.5) | **80.5% ~ 99.9%** (mean 97.3, std 5.5) | ✅ **robust** (모든 채널 80%+) |
+| **병가** (p_work=0.4) | **−7.2% ~ +6.7%** (mean −0.1, std 3.2) | ❌ **non-robust** (부호 반전) |
 
-**다음 (Stage 4–5)**:
-1. **수도권 metapop 1,154 행정동 forward** — 정책 시나리오 (sick_leave / school_closure 등)
-2. **민감도 분석** — work:other 비율 ([0.25, 0.35, 0.50]) → sick_leave 효과 robustness
-3. **ICER + PSA** — γ_source 교체 + R0 posterior CI 펼침
+- 학교폐쇄 cliff = **계절성 phase-transition** (채널 무관 — TODO-4)
+- 병가 부호 = **work π + home spillover 경쟁** (work ≥0.25 → 양수, work <0.15 → 음수)
+
+<div class="blue center" style="margin-top: 6px">
+
+학교폐쇄 효과는 견고 / 병가 효과는 한국 직장 전파 비중 추정 선행 필요
+
+</div>
+
+---
+
+# 13. 현재 진행 + 향후
+
+**Calibration 완료**:
+- ✅ R0 식별 (NB + 채널 정상화, r_hat 1.007, divergence 0)
+- ✅ γ = 0.6 × CDC 상대비 / φ = 1.0 / work:other = 0.349
+- ✅ Posterior predictive 95.2% coverage
+
+**정책 forward** (Step C + 민감도):
+- ✅ 학교 폐쇄 효과 견고 (80%+)
+- ⚠️ 병가 효과 가정 의존 (work:other 비율에 좌우)
+
+**다음 (모델 구조 검토)**:
+- **TODO-4**: 계절성 forcing — calibration ↔ forward 정합 확인 + amp 검토
+- **TODO-5**: home spillover 모델 — κ 적정값 / 사실 검증
+- **TODO-6**: work : other 비율 외부 추정 (KOSIS, 국내 surveillance)
+
+**그 이후**: metapop 공간 정책 (1,154 행정동) + ICER + PSA
 
 ---
 
 <!-- _class: lead -->
 <!-- _paginate: false -->
 
-# 13. 요약
+# 14. 요약
 
-- **비식별을 차원별로 진단·해소**: 데이터가 보는 것은 추정, 못 보는 것은 외부 근거
+- **비식별을 차원별로 진단·해소**: 데이터가 보는 것 추정, 못 보는 것 외부 근거
 - **R(0) 계단** → 노인 과대 + γ 흡수 해결 (1.43 → 0.99)
-- **γ = 0.6 × CDC 상대비** (Jung q=0.67 정합), **φ = 1.0 점고정**
-- **work : other = 0.349 : 0.651** (NIMS 접촉비) — 4 채널 mix 정상화
+- **γ = 0.6 × CDC 상대비** (Jung 정합), **φ = 1.0**, **work:other = 0.349** (NIMS)
 - **Production NB**: R0 1.84 [1.68, 1.98], r_hat 1.007, coverage 95.2%
+- **정책 효과**: 학교폐쇄 견고 / 병가 가정 의존 (구조 검토 TODO)
 
 
