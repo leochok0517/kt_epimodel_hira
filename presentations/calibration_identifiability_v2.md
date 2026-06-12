@@ -353,47 +353,108 @@ NB가 **coverage 와 수렴을 동시에 해결** — 좁은 Poisson likelihood 
 
 ---
 
-# 12. 정책 효과 — 채널 민감도 분석
+# 12a. 채널 식별성 한계 — 4시즌·방학 모두 실패
 
-49 개 합리적 채널 mix × 3 시나리오 forward (R0=1.90 고정)
+**데이터로 식별** ✅ : R0, school 채널, other 채널, 계절성, **winter break**
 
-![w:830](figures/channel_sensitivity.png)
+**데이터로 식별 불가** ❌ : **home, work 채널**
 
-**두 정책의 성격이 정반대**:
+| 시도 | 결과 |
+|---|---|
+| 단일 시즌 4-channel free | home, work ≈ 0 |
+| Winter break 모델 (school_only) | home, work ≈ 0 |
+| Winter break + 접촉 재배분 (κ 재사용) | home, work ≤ 0.01 |
+| amp × realloc sweep (9 조합) | home ≤ 0.004 |
+| **4 시즌 합동 + 방학 + amp** | **home ≤ 0.011, work ≤ 0.011** |
 
-| 정책 | averted 범위 (49 채널) | 판정 |
-|---|---|---|
-| **학교 폐쇄** (p_school=0.5) | **80.5% ~ 99.9%** (mean 97.3, std 5.5) | ✅ **robust** (모든 채널 80%+) |
-| **병가** (p_work=0.4) | **−7.2% ~ +6.7%** (mean −0.1, std 3.2) | ❌ **non-robust** (부호 반전) |
+**원인** (구조적): HIRA 6 연령군 집계에서 30-44 (home/work) 신호가 18-44 bucket에 묻힘. ILI 동일 — 더 고운 데이터 없음.
 
-- 학교폐쇄 cliff = **계절성 phase-transition** (채널 무관 — TODO-4)
-- 병가 부호 = **work π + home spillover 경쟁** (work ≥0.25 → 양수, work <0.15 → 음수)
+→ home, work 는 **field knowledge prior 로 채움** (φ, γ 와 같은 논리)
 
-<div class="blue center" style="margin-top: 6px">
+---
 
-학교폐쇄 효과는 견고 / 병가 효과는 한국 직장 전파 비중 추정 선행 필요
+# 12b. 진단 여정의 정직 — 이전 결론 재평가
+
+방학 발견 (NLL +400K) 이 이전 진단들의 전제를 흔듦. 정직히 재평가:
+
+| 이전 결론 | 재평가 (방학 ON 진단 후) |
+|---|---|
+| **γ level=0.6 으로 home 살림 (0.27)** | **방학 누락 보정 효과**였음 — γ CDC 로 충분 |
+| **work : other = 0.349 NIMS 고정** | 그 시점 일부 정합화 — 지금은 **4 조합 prior 일반화** |
+| **channel mix 4 채널 정상화 표** | 방학 누락 환경의 채널 분리 산물 |
+
+**진짜 발견** (재평가 후에도 robust):
+- ✅ **winter break** (NLL +400K) — 새 메커니즘
+- ✅ **amp 식별** (0.9 선호) — 데이터가 강한 계절성 + 방학 동시 원함
+- ✅ **R0 식별** (시즌별 ~2.0)
+- ✅ **home/work 구조적 한계 확정** — 4-시즌·방학·재배분 다 실패
+
+<div class="blue center" style="margin-top: 4px">
+
+교훈: misspecification (방학 누락) 이 "가짜 비식별" 처럼 보이게 함 — 진단·해소를 반복하며 자기수정
 
 </div>
 
 ---
 
+# 12c. 채널 비율 — field knowledge prior (4 조합)
+
+**두 근거** (R0 기여 기준):
+
+| | home | work | school | other | 비고 |
+|---|---|---|---|---|---|
+| **A** (NIMS contact) | 0.27 | 0.20 | 0.17 | 0.37 | unit R0 보정 |
+| **B** (Italy 2009 H1N1 문헌) | 0.40 | 0.10 | 0.27 | 0.23 | work 3-15% 불확실 |
+
+**4 조합 × 2 강도 fit (4 시즌 평균)**:
+
+| combo | home | work | school | other | R0 | total obj |
+|---|---|---|---|---|---|---|
+| A_strong | 0.11 | 0.13 | 0.27 | 0.49 | 1.98 | −28.31M |
+| A_weak | 0.14 | 0.15 | 0.28 | 0.43 | 1.98 | −28.35M |
+| B_strong | 0.15 | 0.10 | 0.28 | 0.47 | 1.98 | −28.32M |
+| B_weak | 0.13 | 0.06 | 0.29 | 0.53 | 1.99 | −28.36M |
+
+prior 추가 NLL 손실 **~85K** (multi-start 잡음 수준) — 데이터 강하게 거부 안 함.
+
+---
+
+# 12d. 정책 효과 robust성 — 핵심 메시지
+
+![w:1000](figures/channel_prior_comparison.png)
+
+| 정책 | averted 범위 (4 combos) | 판정 |
+|---|---|---|
+| **학교 폐쇄** (p_school=0.5) | **98.3% ~ 98.6%** (span 0.3%) | ✅ **강건** (어떤 가정이든) |
+| **병가** (p_work=0.4) | **−2.8% ~ +2.2%** (span 5.0%) | ⚠️ 효과 작음 (robust) / **부호 가정 의존** |
+
+<div class="blue center" style="margin-top: 8px">
+
+**학교 정책 → 강한 결론**  /  **병가 정책 → 한국 직장전파 외부 데이터 필요**
+
+</div>
+
+A 근거 (NIMS, work π 높음) → 병가 양수 / B 근거 (문헌, work π 낮음) → 병가 음수 (home spillover 우세)
+
+---
+
 # 13. 현재 진행 + 향후
 
-**Calibration 완료**:
-- ✅ R0 식별 (NB + 채널 정상화, r_hat 1.007, divergence 0)
-- ✅ γ = 0.6 × CDC 상대비 / φ = 1.0 / work:other = 0.349
-- ✅ Posterior predictive 95.2% coverage
+**Calibration 완료 (재평가 후)**:
+- ✅ R0 시즌별 식별 (~2.0)
+- ✅ school + other 채널 식별
+- ✅ **winter break 모델** (NLL +400K) + **amp 식별** (~0.9)
+- ✅ home/work 구조적 한계 확정 → **4 조합 field knowledge prior**
 
-**정책 forward** (Step C + 민감도):
-- ✅ 학교 폐쇄 효과 견고 (80%+)
-- ⚠️ 병가 효과 가정 의존 (work:other 비율에 좌우)
+**정책 효과 (4 조합 robust 분석)**:
+- ✅ 학교 폐쇄 **98.3-98.6%** (강건)
+- ⚠️ 병가 **−2.8 ~ +2.2%** (효과 작음 robust, 부호 가정 의존)
 
-**다음 (모델 구조 검토)**:
-- **TODO-4**: 계절성 forcing — calibration ↔ forward 정합 확인 + amp 검토
-- **TODO-5**: home spillover 모델 — κ 적정값 / 사실 검증
-- **TODO-6**: work : other 비율 외부 추정 (KOSIS, 국내 surveillance)
-
-**그 이후**: metapop 공간 정책 (1,154 행정동) + ICER + PSA
+**다음 (구조·외부 데이터)**:
+- **TODO**: 한국 직장 전파 비중 (KOSIS / surveillance) — 병가 부호 확정
+- **TODO**: HIRA 외래/입원 / KDCA serosurvey 활용 (현재 calibration 외부 보강)
+- **다음 단계**: production NB + winter break + amp sample + channel prior (A/B 둘 다 대등 보고)
+- **그 후**: metapop 1,154 행정동 + ICER + PSA
 
 ---
 
@@ -402,10 +463,10 @@ NB가 **coverage 와 수렴을 동시에 해결** — 좁은 Poisson likelihood 
 
 # 14. 요약
 
-- **비식별을 차원별로 진단·해소**: 데이터가 보는 것 추정, 못 보는 것 외부 근거
-- **R(0) 계단** → 노인 과대 + γ 흡수 해결 (1.43 → 0.99)
-- **γ = 0.6 × CDC 상대비** (Jung 정합), **φ = 1.0**, **work:other = 0.349** (NIMS)
-- **Production NB**: R0 1.84 [1.68, 1.98], r_hat 1.007, coverage 95.2%
-- **정책 효과**: 학교폐쇄 견고 / 병가 가정 의존 (구조 검토 TODO)
+- **비식별·misspec 반복 진단** → 데이터가 보는 것 추정, 못 보는 것 외부 근거
+- **R(0) 계단** + **winter break** (NLL +400K) — 진짜 모델 개선
+- **데이터 식별**: R0, school, other, 계절성 (amp~0.9), 방학 효과
+- **데이터 한계 (구조)**: home, work — field knowledge prior 4 조합 robust 분석
+- **정책 결론**: 학교폐쇄 98% 강건 / 병가 ±, 외부 데이터 필요
 
 

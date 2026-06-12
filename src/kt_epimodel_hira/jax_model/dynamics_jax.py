@@ -12,7 +12,7 @@ or computed inline). Seasonal factor: cosine (hardcoded; HIRA fixed defaults).
 from __future__ import annotations
 import jax.numpy as jnp
 from kt_epimodel_hira.jax_model.foi_jax import (
-    compute_foi_jax, seasonal_factor_cosine,
+    compute_foi_jax, seasonal_factor_cosine, school_calendar_mult,
 )
 
 _SEASON_START_ISO_WEEK = 36
@@ -56,6 +56,16 @@ def compute_derivatives_jax(
     seasonality_amp: float = 0.7, seasonality_base: float = 0.0,
     seasonality_peak_day: float = 105.0, seasonality_period: float = 365.0,
     day_in_season_offset: float = 0.0,
+    # school calendar (winter break) — default amp=0 keeps backward compat
+    school_holiday_amp: float = 0.0,
+    school_holiday_start_day: float = 113.0,
+    school_holiday_min_start_day: float = 127.0,
+    school_holiday_min_end_day: float = 162.0,
+    school_holiday_end_day: float = 183.0,
+    # Holiday channel-loss routing. 0 = scale β_s only (school contacts lost),
+    # 1 = scale p_school instead (school contacts reallocate to home via the
+    # existing spillover κ — no new parameter). Smooth blend in between.
+    school_holiday_realloc: float = 0.0,
 ) -> jnp.ndarray:
     """ODE right-hand side. Returns same shape (5, 15, n_admdong)."""
     day_in_season = t + day_in_season_offset
@@ -65,13 +75,33 @@ def compute_derivatives_jax(
         peak_day=seasonality_peak_day, period=seasonality_period,
     )
 
+    school_mult = school_calendar_mult(
+        day_in_season,
+        holiday_amp=school_holiday_amp,
+        holiday_start_day=school_holiday_start_day,
+        holiday_min_start_day=school_holiday_min_start_day,
+        holiday_min_end_day=school_holiday_min_end_day,
+        holiday_end_day=school_holiday_end_day,
+    )
+    # Distribute the break "school-channel loss" between β_s (lost) and
+    # p_school (reallocated). At realloc=0 the loss is destroyed (β_s × mult).
+    # At realloc=1 the loss is routed through p_school, which triggers the
+    # existing home spillover (κ × (1-p_school)) — same machinery as policy
+    # school closure, no new κ.
+    mult_via_p = (school_holiday_realloc * school_mult
+                  + (1.0 - school_holiday_realloc) * 1.0)
+    mult_via_beta = ((1.0 - school_holiday_realloc) * school_mult
+                     + school_holiday_realloc * 1.0)
+    p_school_eff = p_school * mult_via_p
+    beta_s_eff = beta_s * mult_via_beta
+
     foi = compute_foi_jax(
         state,
         C_home=C_home, C_school=C_school, C_work=C_work, C_other=C_other,
         M_home=M_home, M_school=M_school, M_work=M_work, M_other=M_other,
         pop_15=pop_15, rho=rho, kappa=kappa,
-        p_school=p_school, p_work=p_work,
-        beta_h=beta_h, beta_w=beta_w, beta_s=beta_s, beta_o=beta_o,
+        p_school=p_school_eff, p_work=p_work,
+        beta_h=beta_h, beta_w=beta_w, beta_s=beta_s_eff, beta_o=beta_o,
         phi_susc=phi_susc, seasonal_factor=sf,
     )  # (15, n)
 

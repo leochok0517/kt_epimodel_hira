@@ -34,6 +34,33 @@ def seasonal_factor_cosine(
     return jnp.maximum(raw, 0.0)
 
 
+def school_calendar_mult(
+    t: float,
+    holiday_amp: float = 0.0,
+    holiday_start_day: float = 113.0,        # ≈ Dec 23 of 2019-20 season (season t=0 = Sep 1)
+    holiday_min_start_day: float = 127.0,    # ≈ Jan 6
+    holiday_min_end_day: float = 162.0,      # ≈ Feb 10
+    holiday_end_day: float = 183.0,          # ≈ Mar 2
+) -> jnp.ndarray:
+    """Trapezoid multiplier on the school channel for the winter break.
+
+    Default holiday_amp=0 leaves the school channel unscaled (backward
+    compatibility). For 2019-20: t in [start, min_start] ramps down,
+    plateau at (1 - amp), [min_end, end] ramps back up. Korean winter break
+    varies by school so the ramps spread the drop over ~2 weeks each side.
+    """
+    down = jnp.clip(
+        (t - holiday_start_day) / jnp.maximum(holiday_min_start_day - holiday_start_day, 1e-3),
+        0.0, 1.0,
+    )
+    up = jnp.clip(
+        (holiday_end_day - t) / jnp.maximum(holiday_end_day - holiday_min_end_day, 1e-3),
+        0.0, 1.0,
+    )
+    drop = holiday_amp * jnp.minimum(down, up)
+    return 1.0 - drop
+
+
 def compute_phi_school(p_school: float) -> jnp.ndarray:
     phi = jnp.zeros(N_AGE, dtype=jnp.float64)
     return phi.at[STUDENT_SLICE].set(1.0 - p_school)

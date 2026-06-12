@@ -40,6 +40,13 @@ def simulate_jax(
     seasonality_amp: float = 0.7, seasonality_base: float = 0.0,
     seasonality_peak_day: float = 105.0, seasonality_period: float = 365.0,
     day_in_season_offset: float = 0.0,
+    # school calendar (winter break) — optional, defaults preserve old behaviour
+    school_holiday_amp: float = 0.0,
+    school_holiday_start_day: float = 113.0,
+    school_holiday_min_start_day: float = 127.0,
+    school_holiday_min_end_day: float = 162.0,
+    school_holiday_end_day: float = 183.0,
+    school_holiday_realloc: float = 0.0,
     # integration
     t_span: tuple[float, float] = (0.0, 364.0),
     rtol: float = 1e-4,
@@ -74,6 +81,12 @@ def simulate_jax(
             seasonality_amp=seasonality_amp, seasonality_base=seasonality_base,
             seasonality_peak_day=seasonality_peak_day, seasonality_period=seasonality_period,
             day_in_season_offset=day_in_season_offset,
+            school_holiday_amp=school_holiday_amp,
+            school_holiday_start_day=school_holiday_start_day,
+            school_holiday_min_start_day=school_holiday_min_start_day,
+            school_holiday_min_end_day=school_holiday_min_end_day,
+            school_holiday_end_day=school_holiday_end_day,
+            school_holiday_realloc=school_holiday_realloc,
         )
 
     solver = Dopri5() if method == "Dopri5" else Tsit5()
