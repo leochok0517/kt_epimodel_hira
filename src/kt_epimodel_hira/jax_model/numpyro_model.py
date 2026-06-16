@@ -194,6 +194,81 @@ def hira_model(
     return model
 
 
+def hira_model_nb_chprior(
+    loss_fn_nb,
+    *,
+    ngm_eigval_fn,
+    n_seasons: int = 4,
+    target_pi,                      # (4,) field-knowledge centered target
+    sigma_per_channel,              # (4,) prior σ on centered logit per channel
+    gamma_3_override=None,
+):
+    """NB model with Gaussian prior on per-season channel logit toward a target.
+
+    The 4-channel simplex is free in principle (Normal(0, 2.0) base prior so
+    the optimizer can explore), and a centered-logit penalty pulls it toward
+    the field-knowledge target. σ_per_channel lets school/other stay loose
+    while home/work are pinned.
+    """
+    if gamma_3_override is None:
+        gamma_active = get_active_gamma()
+        gamma_3_const = jnp.array([
+            float(gamma_active[CHILD_IDX[0]]),
+            float(gamma_active[ADULT_IDX[0]]),
+            float(gamma_active[ELDER_IDX[0]]),
+        ])
+    else:
+        gamma_3_const = jnp.asarray(gamma_3_override, dtype=jnp.float64)
+
+    target_arr = jnp.asarray(target_pi, dtype=jnp.float64)
+    logit_target = jnp.log(jnp.clip(target_arr, 1e-6, None))
+    logit_target = logit_target - jnp.mean(logit_target)
+    inv_var = 1.0 / (jnp.asarray(sigma_per_channel) ** 2)
+
+    def model():
+        log_R0 = numpyro.sample(
+            "log_R0",
+            dist.TruncatedNormal(
+                jnp.log(2.0), 0.4,
+                low=jnp.log(0.8), high=jnp.log(3.0),
+            ).expand([n_seasons]).to_event(1),
+        )
+        R0 = jnp.exp(log_R0)
+
+        # Wide base prior so the optimizer can move; channel prior is added below
+        logit_pi = numpyro.sample(
+            "logit_pi",
+            dist.Normal(0.0, 2.0).expand([n_seasons, 4]).to_event(2),
+        )
+        # Centered-logit Gaussian prior pulling toward target
+        centered = logit_pi - jnp.mean(logit_pi, axis=-1, keepdims=True)
+        dev = centered - logit_target[None, :]
+        prior_logp = -0.5 * jnp.sum(dev * dev * inv_var[None, :])
+        numpyro.factor("ch_prior", prior_logp)
+
+        pi = jax.nn.softmax(logit_pi, axis=-1)
+
+        phi = jnp.ones(14)
+        phi_full = jnp.ones(15)
+        phi_nb = numpyro.sample("phi_nb", dist.HalfNormal(10.0))
+
+        def derive_one(r, p):
+            return derive_beta_from_R0_simplex(ngm_eigval_fn, r, p, phi_full)
+        beta_per_season = jax.vmap(derive_one)(R0, pi)
+        beta_16 = beta_per_season.reshape(-1)
+
+        numpyro.deterministic("R0", R0)
+        numpyro.deterministic("pi", pi)
+        numpyro.deterministic("beta", beta_16)
+
+        vec_33 = jnp.concatenate([phi, gamma_3_const, beta_16])
+        nll = loss_fn_nb(vec_33, phi_nb)
+        numpyro.factor("likelihood_nb_chprior", -nll)
+
+    model.gamma_source = get_active_source()
+    return model
+
+
 def hira_model_nb_wo(
     loss_fn_nb,
     *,
