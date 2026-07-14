@@ -127,13 +127,13 @@ def main():
         SENTINEL.unlink()
 
     print("=" * 70)
-    print("M2 smoke v7 — reparam A (log_R0 + channel simplex)")
+    print("M2 smoke v9 — unified init (hypothesis B test for φ non-identifiability)")
     print("=" * 70)
     src = get_active_source()
     print(f"  γ source: {src.key}")
     print(f"  log_R0 prior:  TN(log 1.5, 0.3, [log 0.8, log 2.8])")
     print(f"  logit_pi prior: Normal(0, 0.3)  (softmax → 4-simplex)")
-    print(f"  φ prior:  LogNormal(0, 0.15)")
+    print(f"  φ prior:  LogNormal(0, 0.05)")
     print(f"  NUTS:     depth=8, accept=0.8, dense_mass=False (reparam axis-aligns ridge)")
     print(f"  ODE max_steps: 200K")
     print(f"  R(0): step {R0_IMMUNITY_PROFILE[0]}/{R0_IMMUNITY_PROFILE[4]}/"
@@ -216,66 +216,43 @@ def main():
     model = hira_model(loss_fn, ngm_eigval_fn=ngm_eigval_fn,
                        n_seasons=len(SEASONS), lambda_phi=0.1)
 
-    # Reverse-derive init from stepr0 (β → R0/π via NGM)
-    def load_stepr0(name):
-        return np.array(json.load(open(OUTDIR / f"stepr0_{name}.json"))["best_vec"])
-
-    init_names = ["warm", "bio_prior", "distributed", "home_dominant"]
-    inits = []
-    for name in init_names:
-        v = load_stepr0(name)
-        phi_14 = v[:14]
-        phi_full = np.concatenate([phi_14[:5], [1.0], phi_14[5:]])
-        log_R0_init = np.zeros(len(SEASONS))
-        logit_pi_init = np.zeros((len(SEASONS), 4))
-        for si in range(len(SEASONS)):
-            beta_4 = v[17 + si*4 : 21 + si*4]
-            R0_s = float(ngm_eigval_fn(beta_4[0], beta_4[1], beta_4[2], beta_4[3],
-                                        jnp.asarray(phi_full)))
-            log_R0_init[si] = float(np.log(max(R0_s, 1e-3)))
-            beta_pos = np.clip(beta_4, 1e-6, None)
-            pi_s = beta_pos / beta_pos.sum()
-            lp = np.log(pi_s)
-            # center for softmax stability + clip to [-2, 2] so init never
-            # starts NUTS in the unphysical near-degenerate-simplex tail.
-            logit_pi_init[si] = np.clip(lp - lp.mean(), -2.0, 2.0)
-        inits.append({
-            "phi": jnp.asarray(phi_14),
-            "log_R0": jnp.asarray(log_R0_init),
-            "logit_pi": jnp.asarray(logit_pi_init),
-        })
-    init_params = {
-        "phi": jnp.stack([d["phi"] for d in inits]),
-        "log_R0": jnp.stack([d["log_R0"] for d in inits]),
-        "logit_pi": jnp.stack([d["logit_pi"] for d in inits]),
+    # v9 diagnostic: 4 chain 모두 동일 init (φ=1.0, R0=1.5 uniform, simplex 균등).
+    # 가설 B (init dependency) 검증 — 같은 출발점에서 같은 mode 모이면 v7b/v8의
+    # chain별 φ 분산은 stepr0 init 다양성의 결과; 여전히 갈라지면 진짜 비식별.
+    init_names = ["unified", "unified", "unified", "unified"]
+    single = {
+        "phi": jnp.ones(14),                                           # LogNormal median
+        "log_R0": jnp.full(len(SEASONS), float(np.log(1.5))),           # R0=1.5 모든 시즌
+        "logit_pi": jnp.zeros((len(SEASONS), 4)),                      # 균등 simplex
     }
-    print(f"  init chains: {init_names}")
-    print(f"  init log_R0 (chain 0): {[f'{x:.3f}' for x in inits[0]['log_R0'].tolist()]}")
-    print(f"  init R0    (chain 0): {[f'{np.exp(x):.3f}' for x in inits[0]['log_R0'].tolist()]}")
+    init_params = {k: jnp.stack([v] * 4) for k, v in single.items()}
+    print(f"  init chains: {init_names} (φ=1.0, R0=1.5, π=균등 모든 chain 동일)")
+    print(f"  init R0    (모든 chain): 1.5")
 
     mlflow.set_tracking_uri(MLFLOW_URI)
-    mlflow.set_experiment("hira_calibration_m2_smoke_prior_v7")
-    with mlflow.start_run(run_name="smoke_v7_reparam_logR0_simplex"):
+    mlflow.set_experiment("hira_calibration_m2_smoke_prior_v9")
+    with mlflow.start_run(run_name="smoke_v9_phi_init_unified"):
         mlflow.log_params({
-            "num_warmup": 200, "num_samples": 100, "num_chains": 4,
+            "num_warmup": 150, "num_samples": 100, "num_chains": 4,
             "target_accept": 0.8, "max_tree_depth": 8,
             "dense_mass": False,
             "reparam": "A (log_R0 + simplex)",
+            "init": "UNIFIED (phi=1, R0=1.5, pi=uniform) -- hypothesis B test",
             "gamma_source": src.key,
             "log_R0_prior": "TN(log 1.5, 0.3, [log 0.8, log 2.8])",
             "logit_pi_prior": "Normal(0, 0.3)",
-            "phi_prior": "LogNormal(0,0.15)",
+            "phi_prior": "LogNormal(0,0.05)",
             "ode_max_steps": 200_000,
             "R0_profile": "step [.10/.30/.45/.65]",
         })
 
         t0 = time.perf_counter()
-        # reparam A aligns the β·φ scale ridge to the log_R0 axis, so the
-        # remaining geometry is much closer to isotropic; diagonal mass should
-        # be sufficient (v6 needed dense to cope with cross-correlation).
+        # v9 hypothesis B test: identical init across 4 chains. If chains still
+        # diverge in φ → genuine non-identifiability; if they converge → init
+        # dependency was the v7b/v8 driver.
         kernel = NUTS(model, target_accept_prob=0.8, max_tree_depth=8,
                       dense_mass=False)
-        mcmc = MCMC(kernel, num_warmup=200, num_samples=100, num_chains=4,
+        mcmc = MCMC(kernel, num_warmup=150, num_samples=100, num_chains=4,
                     chain_method="sequential", progress_bar=True)
         mcmc.run(random.PRNGKey(3), init_params=init_params,
                  extra_fields=("diverging",))
@@ -356,7 +333,7 @@ def main():
                 "beta_max": float(beta[c].max()),
             })
 
-        print(f"\n  divergences: {n_div}/1200")
+        print(f"\n  divergences: {n_div}/1000")
         print(f"  φ overall: mean={phi_mean.mean():.3f}  range=[{phi_min:.3f}, {phi_max:.3f}]")
         print(f"  φ tail >2.0 (LogNormal sanity): {n_near_phi_cap}/{phi.size} ({n_near_phi_cap/phi.size*100:.1f}%)")
         print(f"  β overall: mean={beta_mean.mean():.4f}  max={beta_max:.4f}")
@@ -448,7 +425,7 @@ def main():
         print("=" * 60)
         print(f"[VERDICT] R0 mean={R0_arr.mean():.2f} "
               f"range=[{R0_arr.min():.2f},{R0_arr.max():.2f}]")
-        print(f"  divergences={int(n_div)}/1200")
+        print(f"  divergences={int(n_div)}/1000")
         print(f"  beta max={beta_max:.4f} cap_frac={n_near_beta_cap/beta.size:.1%}")
         print(f"  phi range=[{phi_min:.3f},{phi_max:.3f}] "
               f"cap_frac={n_near_phi_cap/phi.size:.1%}")

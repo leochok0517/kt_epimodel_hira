@@ -25,3 +25,6 @@ outputs/
 .DS_Store
 outputs/mlruns/
 outputs/mlruns/mlflow.db
+
+# Background run logs
+logs/
