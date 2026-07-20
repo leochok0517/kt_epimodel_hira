@@ -85,6 +85,24 @@ def vacation_weight(
     return jnp.minimum(down, up)
 
 
+def policy_window_weight(
+    t: float,
+    start_day: float = -1.0e9,
+    end_day: float = 1.0e9,
+    ramp_days: float = 3.0,
+) -> jnp.ndarray:
+    """Soft top-hat weight ∈ [0, 1] for a time-windowed policy.
+
+    1 inside [start, end] (with ``ramp_days`` cosine-free linear edges), 0
+    outside. Default (−inf, +inf) → weight ≡ 1 everywhere, so an effective
+    policy value ``1 - w·(1-p)`` reduces to ``p`` for all t (backward compat:
+    whole-season policy). Used to switch p_school/p_work on only in a window.
+    """
+    up = jnp.clip((t - start_day) / jnp.maximum(ramp_days, 1e-3), 0.0, 1.0)
+    down = jnp.clip((end_day - t) / jnp.maximum(ramp_days, 1e-3), 0.0, 1.0)
+    return jnp.minimum(up, down)
+
+
 def compute_phi_school(p_school: float) -> jnp.ndarray:
     phi = jnp.zeros(N_AGE, dtype=jnp.float64)
     return phi.at[STUDENT_SLICE].set(1.0 - p_school)

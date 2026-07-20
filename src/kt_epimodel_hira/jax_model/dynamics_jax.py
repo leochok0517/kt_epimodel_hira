@@ -14,6 +14,7 @@ import jax.numpy as jnp
 from jax.scipy.special import erf
 from kt_epimodel_hira.jax_model.foi_jax import (
     compute_foi_jax, seasonal_factor_cosine, school_calendar_mult, vacation_weight,
+    policy_window_weight,
 )
 
 _SEASON_START_ISO_WEEK = 36
@@ -94,6 +95,18 @@ def compute_derivatives_jax(
     # 1 = scale p_school instead (school contacts reallocate to home via the
     # existing spillover κ — no new parameter). Smooth blend in between.
     school_holiday_realloc: float = 0.0,
+    # Time-windowed policy — independent windows for the school and work levers.
+    # p applies only inside its [start, end]; outside it reverts to the lever's
+    # baseline (default 1.0 = no policy). Defaults (−inf,+inf) window + baseline
+    # 1.0 → whole-season, backward compatible.
+    policy_school_start_day: float = -1.0e9,
+    policy_school_end_day: float = 1.0e9,
+    policy_work_start_day: float = -1.0e9,
+    policy_work_end_day: float = 1.0e9,
+    policy_ramp_days: float = 3.0,
+    # baseline attendance-if-sick outside the window (e.g. 0.6 presenteeism)
+    policy_school_baseline: float = 1.0,
+    policy_work_baseline: float = 1.0,
 ) -> jnp.ndarray:
     """ODE right-hand side. Returns same shape (5, 15, n_admdong)."""
     day_in_season = t + day_in_season_offset
@@ -102,6 +115,19 @@ def compute_derivatives_jax(
         amp=seasonality_amp, base=seasonality_base,
         peak_day=seasonality_peak_day, period=seasonality_period,
     )
+
+    # Windowed policy: p_eff(t) = base − w(t)·(base − p). w≡0 → base; w≡1 → p.
+    # Default base=1 → p_eff = 1 − w·(1−p) (whole-season with w≡1 gives p).
+    w_school = policy_window_weight(
+        day_in_season, start_day=policy_school_start_day,
+        end_day=policy_school_end_day, ramp_days=policy_ramp_days,
+    )
+    w_work = policy_window_weight(
+        day_in_season, start_day=policy_work_start_day,
+        end_day=policy_work_end_day, ramp_days=policy_ramp_days,
+    )
+    p_school = policy_school_baseline - w_school * (policy_school_baseline - p_school)
+    p_work = policy_work_baseline - w_work * (policy_work_baseline - p_work)
 
     if C_home_vac is not None:
         # Time-switching contacts: blend term↔vacation per channel by h(t).

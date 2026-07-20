@@ -50,6 +50,14 @@ def simulate_jax(
     school_holiday_min_end_day: float = 162.0,
     school_holiday_end_day: float = 183.0,
     school_holiday_realloc: float = 0.0,
+    # time-windowed policy — separate school/work windows (defaults → whole-season)
+    policy_school_start_day: float = -1.0e9,
+    policy_school_end_day: float = 1.0e9,
+    policy_work_start_day: float = -1.0e9,
+    policy_work_end_day: float = 1.0e9,
+    policy_ramp_days: float = 3.0,
+    policy_school_baseline: float = 1.0,
+    policy_work_baseline: float = 1.0,
     # integration
     t_span: tuple[float, float] = (0.0, 364.0),
     rtol: float = 1e-4,
@@ -92,6 +100,13 @@ def simulate_jax(
             school_holiday_min_end_day=school_holiday_min_end_day,
             school_holiday_end_day=school_holiday_end_day,
             school_holiday_realloc=school_holiday_realloc,
+            policy_school_start_day=policy_school_start_day,
+            policy_school_end_day=policy_school_end_day,
+            policy_work_start_day=policy_work_start_day,
+            policy_work_end_day=policy_work_end_day,
+            policy_ramp_days=policy_ramp_days,
+            policy_school_baseline=policy_school_baseline,
+            policy_work_baseline=policy_work_baseline,
         )
 
     solver = Dopri5() if method == "Dopri5" else Tsit5()
