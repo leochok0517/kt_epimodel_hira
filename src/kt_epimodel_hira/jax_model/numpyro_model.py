@@ -404,3 +404,46 @@ def hira_model_nb(
 
     model.gamma_source = get_active_source()
     return model
+
+
+def hira_model_nb_shared_pi(
+    shared_pi_loss_fn,
+    *,
+    n_seasons: int = 6,
+    logit_pi_sigma: float = 2.0,
+):
+    """NB model with a SHARED channel mix π across seasons + per-season R0.
+
+    Pairs with ``loss_jax.make_shared_pi_joint_loss_nb`` (which is closed over the
+    fixed φ, γ, κ and the NGM inversion). Only the size axis (log_R0 per season)
+    and one shared simplex π are sampled — testing whether a single channel
+    partition explains all seasons and whether the multi-season constraint
+    identifies π_work (loose prior here, σ=2.0, lets the data speak).
+
+    Sampled:
+        - log_R0: (n_seasons,) per-season log R0.
+        - logit_pi: (4,) SHARED channel-mix logits (softmax inside).
+        - phi_nb: scalar NB concentration.
+    """
+    def model():
+        log_R0 = numpyro.sample(
+            "log_R0",
+            dist.TruncatedNormal(
+                jnp.log(1.5), 0.3, low=jnp.log(0.8), high=jnp.log(2.8),
+            ).expand([n_seasons]).to_event(1),
+        )
+        logit_pi = numpyro.sample(
+            "logit_pi",
+            dist.Normal(0.0, logit_pi_sigma).expand([4]).to_event(1),
+        )
+        phi_nb = numpyro.sample("phi_nb", dist.HalfNormal(10.0))
+
+        pi = jax.nn.softmax(logit_pi)
+        numpyro.deterministic("R0", jnp.exp(log_R0))
+        numpyro.deterministic("pi", pi)
+
+        nll = shared_pi_loss_fn(log_R0, logit_pi, phi_nb)
+        numpyro.factor("likelihood_nb_shared_pi", -nll)
+
+    model.gamma_source = get_active_source()
+    return model

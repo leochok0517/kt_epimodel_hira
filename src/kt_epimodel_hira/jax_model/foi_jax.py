@@ -61,6 +61,30 @@ def school_calendar_mult(
     return 1.0 - drop
 
 
+def vacation_weight(
+    t: float,
+    start_day: float = 113.0,        # ≈ Dec 23 (season t=0 = Sep 1)
+    min_start_day: float = 127.0,    # ≈ Jan 6
+    min_end_day: float = 162.0,      # ≈ Feb 10
+    end_day: float = 183.0,          # ≈ Mar 2
+) -> jnp.ndarray:
+    """Trapezoidal vacation weight h(t) ∈ [0, 1] for term↔vacation blend.
+
+    h=0 in term, ramps 0→1 over [start, min_start], plateau 1 on
+    [min_start, min_end], ramps 1→0 over [min_end, end]. Same calendar as
+    ``school_calendar_mult``; equals ``1 - school_calendar_mult(t, amp=1)``.
+
+    Used to blend contact matrices: C(t) = (1-h)·C_term + h·C_vacation.
+    """
+    down = jnp.clip(
+        (t - start_day) / jnp.maximum(min_start_day - start_day, 1e-3), 0.0, 1.0,
+    )
+    up = jnp.clip(
+        (end_day - t) / jnp.maximum(end_day - min_end_day, 1e-3), 0.0, 1.0,
+    )
+    return jnp.minimum(down, up)
+
+
 def compute_phi_school(p_school: float) -> jnp.ndarray:
     phi = jnp.zeros(N_AGE, dtype=jnp.float64)
     return phi.at[STUDENT_SLICE].set(1.0 - p_school)

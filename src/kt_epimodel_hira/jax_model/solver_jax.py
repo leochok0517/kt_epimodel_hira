@@ -25,6 +25,9 @@ def simulate_jax(
     # contact + mobility (static converted)
     C_home, C_school, C_work, C_other,
     M_home, M_school, M_work, M_other,
+    # optional vacation contact matrices → time-switching C(t) blend (see
+    # compute_derivatives_jax). None → legacy time-invariant contacts.
+    C_home_vac=None, C_school_vac=None, C_work_vac=None, C_other_vac=None,
     pop_15, rho, kappa,
     # disease
     sigma: float, gamma: float,
@@ -71,6 +74,8 @@ def simulate_jax(
             y, t_used,
             C_home=C_home, C_school=C_school, C_work=C_work, C_other=C_other,
             M_home=M_home, M_school=M_school, M_work=M_work, M_other=M_other,
+            C_home_vac=C_home_vac, C_school_vac=C_school_vac,
+            C_work_vac=C_work_vac, C_other_vac=C_other_vac,
             pop_15=pop_15, rho=rho, kappa=kappa,
             sigma=sigma, gamma=gamma,
             beta_h=beta_h, beta_w=beta_w, beta_s=beta_s, beta_o=beta_o,

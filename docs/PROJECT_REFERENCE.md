@@ -103,15 +103,18 @@
 | 한국 공휴일·평일 | `kt_data.data.load_calendar.classify_date` | seasonality / spillover 계산 |
 | **겨울방학** | 모델 상수 (start=113d, min_start=127d, min_end=162d, end=183d) | 12월말~2월, smooth ramp |
 
-### 2.4 CDC 연령별 탐지율 상대비
+### 2.4 연령별 회복률 γ_15 (CDC Reed 2015)
 
-| 연령군 | CDC 상대비 | 적용 γ (level 0.6) |
-|---|---|---|
-| 어린이 (0-19) | 1.45 | 0.87 |
-| 성인 (20-64) | 0.65 | 0.39 |
-| 노인 (65+) | 0.90 | 0.54 |
+γ_15 = **[0.40, 0.18, 0.25]** (child / adult / elder) — CDC Reed 2015 원값.
 
-출처: [src/kt_epimodel_hira/calibration/gamma_registry.py](../src/kt_epimodel_hira/calibration/gamma_registry.py).
+| 연령군 | NIMS idx | γ (1/일) | 감염기간 1/γ |
+|---|---|---|---|
+| 어린이 (0-19) | 0-3 | **0.40** | 2.5일 |
+| 성인 (20-64) | 4-12 | **0.18** | 5.6일 |
+| 노인 (65+) | 13-14 | **0.25** | 4.0일 |
+
+출처: CDC Reed et al., PLOS One 2015 (symptomatic multiplier inversion).
+레지스트리: [src/kt_epimodel_hira/calibration/gamma_registry.py](../src/kt_epimodel_hira/calibration/gamma_registry.py) — `ACTIVE_GAMMA = "cdc_reed2015"`.
 
 ---
 
@@ -201,7 +204,7 @@ $$
 s(t) = 1 + \text{base} + \text{amp} \cdot \cos\!\left(\frac{2\pi (t - \text{peak\_day})}{\text{period}}\right)
 $$
 - `amp` = **0.9** (방학 도입 후 데이터 선호값. 이전 방학 누락 환경에서는 0.3 nominal)
-- `peak_day` ≈ 105 (4월 초)
+- `peak_day` ≈ 105 (12월 중순 — 2019-12-16, ISO 36주 원점 +105일)
 - `base` = 0
 
 ### 3.4 겨울방학 (winter break) ★
@@ -425,13 +428,18 @@ vec_33 = [phi(14), gamma(3), beta(16)]
 
 ### 6.1 정책 메커니즘 (대칭)
 
+**규약 (p_school / p_work)**: `p` = **감염자 중 등교/출근 잔존율** (attend-if-sick).
+**정책 강도 = 1 − p**. **baseline `p = 1.0`** (감염자 전원 등교/출근 → 정책 없음,
+spillover φ_spill = 1 − p = 0 → `spill_factor ≡ 1`). p 는 방학과 무관하며 정책으로만
+발동한다 (방학 접촉 감쇠는 C(t) term↔vacation 전환이 전담 — §3.4).
+
 | 정책 | 의미 | FOI 적용 |
 |---|---|---|
 | **감염 학생 결석** | 감염 학생만 등교 안 함 | `I_eff_school = p_school × I_student` |
 | **병가** (감염 근로자 결근) | 감염 근로자만 출근 안 함 | `I_eff_work = p_work × I_worker` |
 
-- p_school = 0.5 → 감염 학생 50% 결석 (50% 는 등교)
-- p_work = 0.4 → 감염 근로자 60% 결근 (40% 는 출근)
+- p_school = 0.5 → 감염 학생 50% 결석 (50% 는 등교), 정책 강도 1−p = 0.5
+- p_work = 0.4 → 감염 근로자 60% 결근 (40% 는 출근), 정책 강도 1−p = 0.6
 - **물리적 "학교 폐쇄" 아님**: C_school 그대로, β_s 그대로. θ 가 **감염자 (I) 에만** 적용 → 건강 학생은 정상 등교.
 - **Spillover**: 결석/결근 감염자 → 가족 노출 증가 `1 + κ × (1 - θ) × φ_spill`
 

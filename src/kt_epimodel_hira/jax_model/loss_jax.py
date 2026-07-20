@@ -206,6 +206,62 @@ def make_multi_season_loss_fn_nb(
     return loss
 
 
+def make_shared_pi_joint_loss_nb(
+    *,
+    initial_states: Sequence[jnp.ndarray],
+    obs_hira_list: Sequence[jnp.ndarray],
+    weights_hira_list: Sequence[jnp.ndarray],
+    shared_static: dict,
+    ngm_eigval_fn,
+    phi_full: jnp.ndarray,
+    gamma_15: jnp.ndarray,
+    n_weeks: int = 52,
+    min_rate: float = 0.01,
+    discretize_time: bool = False,
+):
+    """Multi-season NB joint loss with a SHARED channel mix π and per-season R0.
+
+    Physical structure: the channel ratio π = (home, work, school, other) is a
+    virus/contact-structure property held common across seasons, while the size
+    axis R0_s varies per season (immunity/drift). β_{c,s} = scale_s · π_c with
+    scale_s = R0_s / ρ(K(π, φ)) via 1-homogeneous NGM inversion — same channel
+    ratios, per-season magnitude.
+
+    φ, γ, κ (inside ``shared_static``) are fixed inputs (not fit here).
+
+    Closure signature: ``(log_R0_vec, logit_pi, phi_nb) -> joint NLL (Σ_s)``
+      - log_R0_vec: (n_seasons,) per-season log R0
+      - logit_pi:   (4,) shared channel-mix logits (softmax inside)
+      - phi_nb:     scalar NB concentration
+    """
+    n_seasons = len(initial_states)
+
+    def loss(log_R0_vec, logit_pi, phi_nb):
+        pi = jax.nn.softmax(logit_pi)                       # shared (4,)
+        rho_pi = ngm_eigval_fn(pi[0], pi[1], pi[2], pi[3], phi_full)
+        total = 0.0
+        for i in range(n_seasons):
+            R0_s = jnp.exp(log_R0_vec[i])
+            beta_4 = (R0_s / rho_pi) * pi                   # 1-homogeneous inversion
+            kw = dict(shared_static)
+            kw["beta_h"] = beta_4[0]
+            kw["beta_w"] = beta_4[1]
+            kw["beta_s"] = beta_4[2]
+            kw["beta_o"] = beta_4[3]
+            kw["phi_susc"] = phi_full
+            states = simulate_jax(initial_states[i], **kw,
+                                   discretize_time=discretize_time)
+            inc_15 = daily_new_infection_by_age_jax(states)
+            pred_hira = simulation_to_hira_by_age_jax(inc_15, gamma_15, n_weeks=n_weeks)
+            total = total + nb_nll_jax(
+                obs_hira_list[i], pred_hira, weights_hira_list[i],
+                concentration=phi_nb, min_rate=min_rate,
+            )
+        return total
+
+    return loss
+
+
 def make_multi_season_loss_fn(
     *,
     initial_states: Sequence[jnp.ndarray],         # 4 seasons of (5, 15, 1)
