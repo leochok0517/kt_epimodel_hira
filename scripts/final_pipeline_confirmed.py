@@ -268,23 +268,23 @@ def main():
     vac = np.array([hol[s][PSHOW]["vacation"]["child_sum"] for s in SEASONS])
     nrev = sum(1 for s in SEASONS if hol[s][PSHOW]["reversal"])
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8.2)); x = np.arange(6); bw = 0.38
-    ax1.bar(x-bw/2, term, bw, color=BLUE, label="학기중 창", edgecolor="k", lw=0.5)
-    ax1.bar(x+bw/2, vac, bw, color=RED, label="방학중 창", edgecolor="k", lw=0.5)
+    ax1.bar(x-bw/2, term, bw, color=BLUE, label="학기", edgecolor="k", lw=0.5)
+    ax1.bar(x+bw/2, vac, bw, color=RED, label="방학", edgecolor="k", lw=0.5)
     ax1.axhline(0, color="k", lw=1.8)
     for xi, (tv, vv) in enumerate(zip(term, vac)):
         ax1.text(xi-bw/2, tv-0.006, f"{tv:+.2f}", ha="center", va="top", fontsize=7.5, color=BLUE)
         ax1.text(xi+bw/2, vv+0.006, f"{vv:+.2f}", ha="center", va="bottom", fontsize=7.5, color=RED)
     ax1.set_xticks(x); ax1.set_xticklabels(labels); ax1.set_ylabel("아동(0–17) Δattack 합 (%pt)")
-    ax1.set_title(f"병가 아동영향: 학기중(파랑) vs 방학중(빨강)  개입 p_work={PSHOW}  ({nrev}/6 반전, baseline 0.6)", fontsize=11.5, fontweight="bold")
+    ax1.set_title(f"병가 아동영향: 학기중(파랑) vs 방학중(빨강)  개입 p_work={PSHOW}", fontsize=11.5, fontweight="bold")
     ax1.legend(loc="upper right"); ax1.grid(axis="y", alpha=0.3); ax1.margins(y=0.18)
     age_c = {"0-5": "#9ecae1", "6-11": "#ef6548", "12-17": "#b30000"}; bw2 = 0.26
     for j, ag in enumerate(CHILD):
         vals = np.array([hol[s][PSHOW]["vacation"]["all"][ag] for s in SEASONS])
         ax2.bar(x+(j-1)*bw2, vals, bw2, color=age_c[ag], label=f"{ag}세", edgecolor="k", lw=0.4)
     ax2.axhline(0, color="k", lw=1.5); ax2.set_xticks(x); ax2.set_xticklabels(labels); ax2.set_ylabel("방학중 Δattack (%pt)")
-    ax2.set_title("방학중 병가: 연령별 (확정 γ 반영)", fontsize=11.5, fontweight="bold")
+    ax2.set_title("방학중 연령별 변화", fontsize=11.5, fontweight="bold")
     ax2.legend(loc="upper left", ncol=3); ax2.grid(axis="y", alpha=0.3); ax2.margins(y=0.15)
-    fig.suptitle(f"방학 부호반전 (확정 파라미터, 개입 강도 p_work={PSHOW})", fontsize=13, fontweight="bold", y=0.995)
+    fig.suptitle(f"학기중과 방학 비교 (p_work={PSHOW})", fontsize=13, fontweight="bold", y=0.995)
     fig.tight_layout(rect=[0, 0, 1, 0.97]); fig.savefig(FIGDIR/"viz_holiday_reversal_6seasons.png", bbox_inches="tight"); plt.close(fig)
     print("  [fig4] viz_holiday_reversal_6seasons.png")
     print("=" * 96)
