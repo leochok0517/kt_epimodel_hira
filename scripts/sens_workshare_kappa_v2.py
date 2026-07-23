@@ -71,6 +71,10 @@ OUT_JSON.parent.mkdir(parents=True, exist_ok=True)
 OUT_FIG.parent.mkdir(parents=True, exist_ok=True)
 
 SEASON_LABEL = "2019-2020"
+# ★ v4 canonical seasonality amplitude — 논문 표기 값.
+# (ModelParameters.DiseaseParameters default 는 0.7 이지만, 본 프로젝트 전
+#  v4 파이프라인 (kappa_no_eta_presymp, nuts_v4, final_v4_figures, joint,
+#  independent) 은 F.S.AMP → 이 값을 shared_base 로 override 하여 사용.)
 AMP = 0.9
 HOLIDAY = dict(
     school_holiday_amp=0.7,

@@ -86,6 +86,11 @@ def compute_derivatives_jax(
     seasonality_peak_day: float = 105.0, seasonality_period: float = 365.0,
     day_in_season_offset: float = 0.0,
     # school calendar (winter break) — default amp=0 keeps backward compat
+    # ★ v4 LEGACY: 아래 school_holiday_* 파라미터 블록은 C_*_vac (vacation
+    #   matrix) 옵션 도입 이전 경로. C_*_vac 이 제공되면 이 블록은 완전히
+    #   우회됨 (아래 if-branch 로 진입 안 함). v4 pipeline (kappa_no_eta_presymp,
+    #   nuts_v4, final_v4_figures) 은 C(t) = (1-h)·C_term + h·C_vac 스위칭
+    #   경로 사용 → 이 파라미터들은 미사용. 재현성 위해 코드 삭제하지 않음.
     school_holiday_amp: float = 0.0,
     school_holiday_start_day: float = 113.0,
     school_holiday_min_start_day: float = 127.0,

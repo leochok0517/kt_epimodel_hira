@@ -139,6 +139,11 @@ def daily_new_infection_by_age_erlang(states: jnp.ndarray) -> jnp.ndarray:
 # Latent period Erlang(2, 2σ): mean 1/σ preserved, variance ÷2 → sharper
 # generation interval → sharper epidemic. R0 unchanged (mean periods preserved).
 # 8-compartment state: [S, V, E₁, E₂, I₁, I₂, I₃, R].
+#
+# ★ v4 LEGACY (실험용): v4 pipeline 은 basic Erlang I₃ (E 1-stage) 를 사용
+#   → 아래 E2I3 함수들(simulate_jax_erlang_E2I3, split_seed_to_erlang_E2I3,
+#   daily_new_infection_by_age_erlang_E2I3, compute_derivatives_erlang_E2I3)
+#   은 미사용. 재현성 위해 코드 유지.
 # ═══════════════════════════════════════════════════════════════════════════
 N_E_STAGES = 2
 E8_S, E8_V, E8_E1, E8_E2, E8_I1, E8_I2, E8_I3, E8_R = 0, 1, 2, 3, 4, 5, 6, 7
