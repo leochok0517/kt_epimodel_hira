@@ -147,7 +147,7 @@ def fig_F1():
 # ═══════════════════════════════════════════════════════════════════════════
 def fig_F2():
     s = "2019-2020"
-    fig, ax = plt.subplots(figsize=(W_DOUBLE * 0.85, 3.8), constrained_layout=True)
+    fig, ax = plt.subplots(figsize=(W_DOUBLE * 0.72, 3.8), constrained_layout=True)
     ys = np.arange(len(AGES))
     dy = 0.2
     for i, ag in enumerate(AGES):
@@ -168,11 +168,15 @@ def fig_F2():
     ax.set_xlabel("Averted infections (n, 2019-20)")
     ax.set_ylabel("Age group")
 
-    # 순합계 (paper 컨벤션: adult 18-64, child 0-17, 65+ 별도)
+    # 총계: sick net = 전 연령 순합계 (본문과 일치, sick_num_net_term)
     CHILD = ["0-5","6-11","12-17"]; ADULT_2 = ["18-44","45-64"]
     tot_sk_adult = sum(POL[s]["sick_num_by_age"][a]["mean"] for a in ADULT_2)
     tot_sk_child = sum(POL[s]["sick_num_by_age"][a]["mean"] for a in CHILD)
-    tot_sk_net = tot_sk_adult + tot_sk_child
+    _net_key = POL[s].get("sick_num_net_term")
+    if _net_key and _net_key.get("mean") is not None:
+        tot_sk_net = _net_key["mean"]
+    else:
+        tot_sk_net = sum(POL[s]["sick_num_by_age"][a]["mean"] for a in AGES)
     tot_sc = sum(POL[s]["school_num_by_age"][a]["mean"] for a in AGES)
 
     # 범례 (축 밖 하단, 겹침 방지)
@@ -186,18 +190,17 @@ def fig_F2():
               bbox_to_anchor=(0.5, -0.15), ncol=2,
               frameon=False, fontsize=8)
 
-    # Total averted 박스 — 데이터 밖 오른쪽 여백 (x 축 상단, 데이터 clip 확장)
-    # 65+ 마커는 y=5, x≈−400 근처. 65+ 마커와 겹치지 않게 그림 우상단(fig 좌표) 밖.
-    ax.text(1.02, 0.98,
-            f"Net averted (sick leave, paper convention):\n"
+    # 요약 박스 — 축 내부 우상단 (0-5/6-11/12-17 행의 오른쪽 사분면이 비어 있음)
+    ax.text(0.98, 0.97,
+            f"Sick leave, net averted:\n"
             f"  Adults (18–64): +{tot_sk_adult:,.0f}\n"
             f"  Children (0–17): {tot_sk_child:+,.0f}\n"
-            f"  Net: +{tot_sk_net:,.0f}\n\n"
+            f"  Net (all ages): +{tot_sk_net:,.0f}\n"
             f"School absence total: +{tot_sc:,.0f}",
-            transform=ax.transAxes, ha="left", va="top",
+            transform=ax.transAxes, ha="right", va="top",
             fontsize=7.5,
             bbox=dict(boxstyle="round,pad=0.4", fc="white",
-                       ec=COL_ZERO, lw=0.5))
+                       ec=COL_ZERO, lw=0.5, alpha=0.92))
     savefig(fig, "school_vs_sick_number")
 
 
