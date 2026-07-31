@@ -39,8 +39,10 @@ from kt_epimodel_hira.jax_model.erlang_presymp import (
 import final_pipeline_confirmed as F
 
 REPO = Path(__file__).resolve().parent.parent
-NUTS_RAW = np.load(REPO / "outputs/eda/nuts_v4_full_raw.npz")
-NUTS_EXT = np.load(REPO / "outputs/eda/nuts_v4_full_extended.npz")
+_NRAW = os.environ.get("NUTS_RAW_PATH", "outputs/eda/nuts_v4_full_raw.npz")
+_NEXT = os.environ.get("NUTS_EXT_PATH", "outputs/eda/nuts_v4_full_extended.npz")
+NUTS_RAW = np.load(REPO / _NRAW)
+NUTS_EXT = np.load(REPO / _NEXT)
 PI_MERGED = np.concatenate([NUTS_RAW["pi"], NUTS_EXT["pi"]], axis=0)
 LOG_R0_MERGED = np.concatenate([NUTS_RAW["log_R0"], NUTS_EXT["log_R0"]], axis=0)
 
@@ -55,7 +57,34 @@ N_POST = 50
 SEED = 0
 
 
+USE_SEASONPOP = os.environ.get("USE_SEASONPOP", "0") == "1"
+
+
+class _DispatchC:
+    def __init__(self, cbys, H, pop6_by_s):
+        self._cbys = cbys; self._H = H; self._pop6_by_s = pop6_by_s
+        self._current = list(cbys.keys())[0]
+    def set_season(self, s): self._current = s
+    def __getitem__(self, k):
+        d = self._cbys[self._current]
+        if k in ("shared", "ngm3"): return d[k]
+        if k == "st": return {self._current: d["st"]}
+        if k == "H": return self._H
+        if k == "pop6": return self._pop6_by_s[self._current]
+        raise KeyError(k)
+
+
 def build_setup():
+    if USE_SEASONPOP:
+        from season_pop_setup import build_seasonwise_setup
+        C_all = build_seasonwise_setup(imm=IMM, gamma_15=GAMMA_15,
+                                         use_season_pop=True)
+        cbys = {}
+        for s in SEASONS:
+            cbys[s] = dict(shared=C_all["shared_by_s"][s],
+                            ngm3=C_all["ngm3_by_s"][s],
+                            st=C_all["st_by_s"][s])
+        return _DispatchC(cbys, C_all["H"], C_all["pop6_by_s"])
     C = F.build()
     pf = np.asarray(C["shared"]["pop_15"])
     C["pf"] = pf.sum(1) if pf.ndim == 2 else pf
@@ -76,6 +105,7 @@ def build_setup():
 
 
 def sim_inc(C, s, R0, pi, work_win=WH):
+    if isinstance(C, _DispatchC): C.set_season(s)
     b0 = derive_beta_from_R0_simplex(C["ngm3"], jnp.asarray(R0),
                                        jnp.asarray(pi), jnp.asarray(PHI))
     beta = b0 / NGM_F
@@ -93,6 +123,7 @@ def sim_inc(C, s, R0, pi, work_win=WH):
 
 
 def sim_base(C, s, R0, pi):
+    if isinstance(C, _DispatchC): C.set_season(s)
     b0 = derive_beta_from_R0_simplex(C["ngm3"], jnp.asarray(R0),
                                        jnp.asarray(pi), jnp.asarray(PHI))
     beta = b0 / NGM_F
@@ -117,19 +148,19 @@ def main():
     print("="*88); print(f"F13 sickleave_term_vs_vacation  N={N_POST}"); print("="*88)
     t0 = time.perf_counter()
     C = build_setup(); print(f"[setup] {time.perf_counter()-t0:.1f}s")
-    pop6 = np.asarray(C["pop6"])
 
     rng = np.random.default_rng(SEED)
     idx = rng.choice(PI_MERGED.shape[0], size=N_POST, replace=False)
     pi_s = PI_MERGED[idx]; log_R0_s = LOG_R0_MERGED[idx]
 
-    # 산출: {s: {"term": (N,6) Δattack, "vac": (N,6), "term_tot": (N,), "vac_tot": (N,)}}
     results = {s: dict(term_d=np.zeros((N_POST, 6)),
                         vac_d=np.zeros((N_POST, 6)),
                         term_av=np.zeros(N_POST),
                         vac_av=np.zeros(N_POST)) for s in SEASONS}
     for k in range(N_POST):
         for j, s in enumerate(SEASONS):
+            if isinstance(C, _DispatchC): C.set_season(s)
+            pop6 = np.asarray(C["pop6"])
             R0 = float(np.exp(log_R0_s[k, j])); pi_k = pi_s[k]
             b_inc = sim_base(C, s, R0, pi_k); b6 = att6(C, b_inc)
             t_inc = sim_inc(C, s, R0, pi_k, work_win=TERM); t6 = att6(C, t_inc)

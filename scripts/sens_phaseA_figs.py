@@ -18,8 +18,12 @@ from figstyle import (savefig, COL_SICK, COL_SCHOOL, COL_SEASON, COL_ZERO,
                        marker_style, is_sig)
 
 REPO = Path(__file__).resolve().parent.parent
-FIG = REPO / "figures" / "v4" / "sensitivity"
+# FIG_OUTDIR_SUFFIX = "_seasonpop" 시 figures/v4_seasonpop/sensitivity/
+_SUFFIX = os.environ.get("FIG_OUTDIR_SUFFIX", "")
+FIG = REPO / "figures" / f"v4{_SUFFIX}" / "sensitivity"
 FIG.mkdir(parents=True, exist_ok=True)
+# SENS_TAG = "_v4" (default) or "_seasonpop" — controls JSON file name
+_TAG = os.environ.get("SENS_TAG", "_v4")
 
 # custom savefig into sensitivity dir instead of paper dir
 def _save(fig, name):
@@ -30,7 +34,7 @@ def _save(fig, name):
 
 # ═════════════ Fig S1: π_work × κ ═════════════
 def fig_S1():
-    d = json.load(open(REPO/"outputs/eda/sens_piwork_kappa_v4.json"))
+    d = json.load(open(REPO/f"outputs/eda/sens_piwork_kappa{_TAG}.json"))
     PIW = d["meta"]["pi_work_grid"]; KAP = d["meta"]["kappa_grid"]
     grid = defaultdict(dict)
     for r in d["rows"]:
@@ -100,7 +104,7 @@ def fig_S1():
 
 # ═════════════ Fig S2: κ 상한 posterior CI ═════════════
 def fig_S2():
-    d = json.load(open(REPO/"outputs/eda/sens_kappa_upper_v4.json"))
+    d = json.load(open(REPO/f"outputs/eda/sens_kappa_upper{_TAG}.json"))
     KAP = d["meta"]["kappa_grid"]
     by_ks = defaultdict(list); by_ks_v = defaultdict(list)
     by_age_ks = {a: defaultdict(list) for a in AGES}
@@ -169,7 +173,7 @@ def fig_S2():
 
 # ═════════════ Fig S3: R(0) 5×5 child vac ═════════════
 def fig_S3():
-    d = json.load(open(REPO/"outputs/eda/sens_R0_transition_v4.json"))
+    d = json.load(open(REPO/f"outputs/eda/sens_R0_transition{_TAG}.json"))
     IMM2 = d["meta"]["imm_20_44_grid"]; IMM4 = d["meta"]["imm_45_64_grid"]
     grid = defaultdict(dict)
     for r in d["rows"]:

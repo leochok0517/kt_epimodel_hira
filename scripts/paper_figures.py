@@ -20,10 +20,29 @@ from figstyle import (
 )
 
 REPO = Path(__file__).resolve().parent.parent
-POL = json.load(open(REPO / "outputs/eda/policy_posterior_v4.json"))
-NUTS_RAW = np.load(REPO / "outputs/eda/nuts_v4_full_raw.npz")
-NUTS_EXT = np.load(REPO / "outputs/eda/nuts_v4_full_extended.npz")
-NUTS_DIAG = json.load(open(REPO / "outputs/eda/nuts_v4_merged_diagnostics.json"))
+# Env var overrides — 없으면 v4 기본
+_POL = os.environ.get("POLICY_JSON", "outputs/eda/policy_posterior_v4.json")
+_NRAW = os.environ.get("NUTS_RAW_PATH", "outputs/eda/nuts_v4_full_raw.npz")
+_NEXT = os.environ.get("NUTS_EXT_PATH", "outputs/eda/nuts_v4_full_extended.npz")
+_NDIAG = os.environ.get("NUTS_DIAG_PATH", "outputs/eda/nuts_v4_merged_diagnostics.json")
+POL = json.load(open(REPO / _POL))
+NUTS_RAW = np.load(REPO / _NRAW)
+NUTS_EXT = np.load(REPO / _NEXT)
+NUTS_DIAG = json.load(open(REPO / _NDIAG))
+
+# Schema adapter — seasonpop 스키마 (sick_total_term) → v4 legacy (sick_total)
+def _adapt_seasonpop_schema(pol):
+    for s in ("2016-2017","2017-2018","2019-2020"):
+        if s not in pol: continue
+        d = pol[s]
+        if "sick_total_term" in d and "sick_total" not in d:
+            d["sick_total"] = d["sick_total_term"]
+            d["school_total"] = d["school_total_term"]
+            d["sick_by_age"] = d.get("sick_d_by_age_term", {})
+            d["school_by_age"] = d.get("school_d_by_age_term", {})
+            d["sick_num_by_age"] = d.get("sick_num_by_age_term", {})
+            d["school_num_by_age"] = d.get("school_num_by_age_term", {})
+_adapt_seasonpop_schema(POL)
 
 # ── Merged NUTS posterior (4000 draws) ──
 PI_MERGED = np.concatenate([NUTS_RAW["pi"], NUTS_EXT["pi"]], axis=0)          # (4000, 4)
@@ -49,8 +68,14 @@ def verify_reference():
         "2017-2018": (0.22, [-0.33, 0.87], 3.44, [2.15, 5.08]),
         "2019-2020": (0.40, [-0.05, 0.93], 2.14, [1.31, 3.23]),
     }
+    # seasonpop 모드에서는 §1 기준값(v4) 이 아니라 새 값이므로 검증 건너뜀
+    _skip_ref = os.environ.get("FIG_OUTDIR_SUFFIX", "") != ""
     for s, (sk_m, sk_ci, sc_m, sc_ci) in ref.items():
         sk = POL[s]["sick_total"]; sc = POL[s]["school_total"]
+        if _skip_ref:
+            print(f"  · {s}: sick={sk['mean']:+.2f} 90%[{sk['q05']:+.2f},{sk['q95']:+.2f}] "
+                  f"| school={sc['mean']:+.2f} 90%[{sc['q05']:+.2f},{sc['q95']:+.2f}] (seasonpop, ref skip)")
+            continue
         if not (abs(sk["mean"] - sk_m) < 0.03 and abs(sc["mean"] - sc_m) < 0.03):
             print(f"  ✗ {s}: sick got mean={sk['mean']:.2f} ref={sk_m} | "
                   f"school got={sc['mean']:.2f} ref={sc_m}")
@@ -62,7 +87,9 @@ def verify_reference():
     piw = np.quantile(PI_MERGED[:, 1], [0.025, 0.5, 0.975])
     print(f"\n  π_work merged 95%CI = [{piw[0]:.3f}, {piw[2]:.3f}] "
           f"(ref [0.242, 0.353])")
-    if abs(piw[0] - 0.242) > 0.01 or abs(piw[2] - 0.353) > 0.01:
+    if _skip_ref:
+        print("  · π_work CI check skipped (seasonpop)")
+    elif abs(piw[0] - 0.242) > 0.01 or abs(piw[2] - 0.353) > 0.01:
         print("  ✗ π_work CI mismatch")
         ok = False
     else:
@@ -365,8 +392,9 @@ def fig_F6():
     panel_label(ax, "C")
 
     # 진단 수치 요약 (caption 담당이나 그림 안에도 subtle 하게)
-    rhat = NUTS_DIAG["merged"]["pi[1]"]["r_hat"]
-    ess = NUTS_DIAG["merged"]["pi[1]"]["ess_bulk"]
+    _diag_root = NUTS_DIAG.get("merged") or NUTS_DIAG.get("summary_all") or {}
+    rhat = _diag_root["pi[1]"]["r_hat"]
+    ess = _diag_root["pi[1]"]["ess_bulk"]
     ax.text(0.02, 0.98,
              f"$\\hat{{R}}$={rhat:.3f}  ESS={ess:.0f}",
              transform=ax.transAxes, va="top", ha="left", fontsize=7,

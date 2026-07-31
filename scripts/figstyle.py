@@ -9,9 +9,12 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 
 # ── 폴더 ──
+# FIG_OUTDIR_SUFFIX 환경변수로 대체 폴더 지정 (예: "_seasonpop")
+# → figures/paper_seasonpop/{pdf,png}/
 REPO = Path(__file__).resolve().parent.parent
-PDF_DIR = REPO / "figures" / "paper" / "pdf"
-PNG_DIR = REPO / "figures" / "paper" / "png"
+_SUFFIX = os.environ.get("FIG_OUTDIR_SUFFIX", "")
+PDF_DIR = REPO / "figures" / f"paper{_SUFFIX}" / "pdf"
+PNG_DIR = REPO / "figures" / f"paper{_SUFFIX}" / "png"
 PDF_DIR.mkdir(parents=True, exist_ok=True)
 PNG_DIR.mkdir(parents=True, exist_ok=True)
 

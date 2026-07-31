@@ -48,8 +48,10 @@ from kt_epimodel_hira.jax_model.erlang_presymp import (
 import final_pipeline_confirmed as F
 
 REPO = Path(__file__).resolve().parent.parent
-NUTS_RAW = np.load(REPO / "outputs/eda/nuts_v4_full_raw.npz")
-NUTS_EXT = np.load(REPO / "outputs/eda/nuts_v4_full_extended.npz")
+_NRAW = os.environ.get("NUTS_RAW_PATH", "outputs/eda/nuts_v4_full_raw.npz")
+_NEXT = os.environ.get("NUTS_EXT_PATH", "outputs/eda/nuts_v4_full_extended.npz")
+NUTS_RAW = np.load(REPO / _NRAW)
+NUTS_EXT = np.load(REPO / _NEXT)
 PI_MERGED = np.concatenate([NUTS_RAW["pi"], NUTS_EXT["pi"]], axis=0)
 LOG_R0_MERGED = np.concatenate([NUTS_RAW["log_R0"], NUTS_EXT["log_R0"]], axis=0)
 
@@ -64,7 +66,43 @@ N_POST = 60         # posterior subsample (속도 조절)
 SEED = 0
 
 
+USE_SEASONPOP = os.environ.get("USE_SEASONPOP", "0") == "1"
+
+
+class _DispatchC:
+    """USE_SEASONPOP=1 시 시즌별 pop 반영 C_by_s 를 dispatch."""
+    def __init__(self, cbys, H, pop6_by_s, obs, w, nw, full_obs):
+        self._cbys = cbys; self._H = H; self._pop6_by_s = pop6_by_s
+        self._obs = obs; self._w = w; self._nw = nw; self._full_obs = full_obs
+        self._current = list(cbys.keys())[0]
+        # for callers that access C["st"], C["ngm3"], etc.
+    def set_season(self, s): self._current = s
+    def __getitem__(self, k):
+        d = self._cbys[self._current]
+        if k in ("shared", "ngm3"): return d[k]
+        if k == "st": return {self._current: d["st"]}
+        if k == "H": return self._H
+        if k == "pop6": return self._pop6_by_s[self._current]
+        if k == "obs": return self._obs
+        if k == "w": return self._w
+        if k == "nw": return self._nw
+        if k == "full_obs": return self._full_obs
+        raise KeyError(k)
+
+
 def build_setup():
+    if USE_SEASONPOP:
+        from season_pop_setup import build_seasonwise_setup
+        C_all = build_seasonwise_setup(imm=IMM, gamma_15=GAMMA_15,
+                                         use_season_pop=True)
+        cbys = {}
+        for s in SEASONS:
+            cbys[s] = dict(shared=C_all["shared_by_s"][s],
+                            ngm3=C_all["ngm3_by_s"][s],
+                            st=C_all["st_by_s"][s])
+        return _DispatchC(cbys, C_all["H"], C_all["pop6_by_s"],
+                           C_all["obs"], C_all["w"], C_all["nw"],
+                           C_all["full_obs"])
     C = F.build()
     pf = np.asarray(C["shared"]["pop_15"])
     C["pf"] = pf.sum(1) if pf.ndim == 2 else pf
@@ -85,6 +123,7 @@ def build_setup():
 
 
 def sim_inc(C, s, R0, pi, p_school=BASE, p_work=BASE, sch_win=WH, work_win=WH):
+    if isinstance(C, _DispatchC): C.set_season(s)
     b0 = derive_beta_from_R0_simplex(C["ngm3"], jnp.asarray(R0),
                                        jnp.asarray(pi), jnp.asarray(PHI))
     beta = b0 / NGM_F
@@ -111,7 +150,7 @@ def pred_h(C, inc, n_weeks):
 
 
 def load_obs(C):
-    """전체 시즌 관측 HIRA (52주, 6연령)."""
+    """전체 시즌 관측 NHIS (52주, 6연령)."""
     obs = {}
     for s in SEASONS:
         t = load_hira_target_by_age(s, sido_codes=list(SUDOGWON_SIDO_CODES),
@@ -127,9 +166,9 @@ def load_obs(C):
 # 사후 예측 (F7, F8, F9)
 # ═══════════════════════════════════════════════════════════════════════════
 def posterior_predictive(C, n_samples=N_POST, seed=SEED):
-    """N 표본에 대해 forward sim → HIRA 시계열.
+    """N 표본에 대해 forward sim → NHIS 시계열.
 
-    Returns dict[s] = ndarray (N, 52, 6) HIRA weekly counts.
+    Returns dict[s] = ndarray (N, 52, 6) NHIS weekly counts.
     Also inc_15 dict[s] = (N, T-1, 15) daily infections for epicurve.
     """
     rng = np.random.default_rng(seed)
@@ -176,7 +215,7 @@ def fig_F7(preds, obs):
                 label="Observed" if k == 0 else None)
         ax.set_xlabel("Epidemic week")
         if k == 0:
-            ax.set_ylabel("Weekly incidence (HIRA)")
+            ax.set_ylabel("Weekly incidence (NHIS)")
         ax.text(0.03, 0.95, s, transform=ax.transAxes, fontsize=8,
                 fontweight="bold", va="top", ha="left", color=col)
     axes[0].legend(loc="upper right", frameon=False, fontsize=7)
@@ -190,11 +229,12 @@ def fig_F7(preds, obs):
 # F8 — fit_byage (시즌 × 연령 grid, per-100k)
 # ═══════════════════════════════════════════════════════════════════════════
 def fig_F8(C, preds, obs):
-    # pop6 per age (HIRA-6)
-    pop6 = np.asarray(C["pop6"])
+    # pop6 per age (NHIS-6)
     fig, axes = plt.subplots(3, 6, figsize=(W_DOUBLE, 4.8),
                               constrained_layout=True, sharex=True, sharey=True)
     for r, s in enumerate(SEASONS):
+        if isinstance(C, _DispatchC): C.set_season(s)
+        pop6 = np.asarray(C["pop6"])
         for c, ag in enumerate(AGES):
             ax = axes[r, c]
             pr = preds[s][:, :, c] / pop6[c] * 1e5    # per-100k
@@ -225,9 +265,10 @@ def fig_F8(C, preds, obs):
 # ═══════════════════════════════════════════════════════════════════════════
 def fig_F9(C, incs):
     s = "2019-2020"
+    if isinstance(C, _DispatchC): C.set_season(s)
     pop6 = np.asarray(C["pop6"])
     inc_arr = incs[s]                          # (N, T-1, 15)
-    # H matrix aggregate to HIRA-6 then per-day
+    # H matrix aggregate to NHIS-6 then per-day
     H = np.asarray(C["H"])                      # (6, 15)
     inc6 = np.einsum("ai,nti->nta", H, inc_arr)   # (N, T-1, 6) daily infections
     # per-100k
@@ -261,13 +302,14 @@ def fig_F9(C, incs):
 # F10 — baseline_attack_byage (baseline final attack rate, 3시즌 평균±범위)
 # ═══════════════════════════════════════════════════════════════════════════
 def fig_F10(C, incs):
-    pop6 = np.asarray(C["pop6"])
     H = np.asarray(C["H"])
     fig, ax = plt.subplots(figsize=(W_DOUBLE * 0.75, 3.0),
                             constrained_layout=True)
     xs = np.arange(len(AGES))
     all_att = np.zeros((len(SEASONS), 6))       # (3, 6) attack rate posterior mean
     for j, s in enumerate(SEASONS):
+        if isinstance(C, _DispatchC): C.set_season(s)
+        pop6 = np.asarray(C["pop6"])
         inc_arr = incs[s]                        # (N, T-1, 15)
         tot_15 = inc_arr.sum(axis=1)              # (N, 15)
         att6 = np.einsum("ai,ni->na", H, tot_15) / pop6[None, :]  # (N, 6)
@@ -335,6 +377,7 @@ def fig_F12(C, n_post=30):
     """대표 시즌 2019-20, p_work·p_school ∈ {0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.0},
     posterior N 표본에 대해 averted % 분포 산출."""
     s = "2019-2020"; j_s = SEASONS.index(s)
+    if isinstance(C, _DispatchC): C.set_season(s)
     p_grid = [0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.0]
     rng = np.random.default_rng(SEED + 1)
     idx = rng.choice(PI_MERGED.shape[0], size=n_post, replace=False)
