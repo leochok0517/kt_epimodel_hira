@@ -54,6 +54,7 @@ NUTS_RAW = np.load(REPO / _NRAW)
 NUTS_EXT = np.load(REPO / _NEXT)
 PI_MERGED = np.concatenate([NUTS_RAW["pi"], NUTS_EXT["pi"]], axis=0)
 LOG_R0_MERGED = np.concatenate([NUTS_RAW["log_R0"], NUTS_EXT["log_R0"]], axis=0)
+PHI_NB_MERGED = np.concatenate([NUTS_RAW["phi_nb"], NUTS_EXT["phi_nb"]], axis=0)
 
 PHI = np.array(F.PHI); BASE = 0.6
 GAMMA_15 = np.array([0.40,0.40,0.25,0.18]+[0.18]*9+[0.25,0.25])
@@ -170,10 +171,12 @@ def posterior_predictive(C, n_samples=N_POST, seed=SEED):
 
     Returns dict[s] = ndarray (N, 52, 6) NHIS weekly counts.
     Also inc_15 dict[s] = (N, T-1, 15) daily infections for epicurve.
+    Also phi_nb of selected posterior indices (N,) for NB predictive interval.
     """
     rng = np.random.default_rng(seed)
     idx = rng.choice(PI_MERGED.shape[0], size=n_samples, replace=False)
     pi_s = PI_MERGED[idx]; log_R0_s = LOG_R0_MERGED[idx]
+    phi_nb_s = PHI_NB_MERGED[idx]
     preds = {s: [] for s in SEASONS}
     incs = {s: [] for s in SEASONS}
     n_weeks_by_s = {}
@@ -190,38 +193,53 @@ def posterior_predictive(C, n_samples=N_POST, seed=SEED):
     for s in SEASONS:
         preds[s] = np.stack(preds[s])   # (N, 52, 6)
         incs[s] = np.stack(incs[s])     # (N, T-1, 15)
-    return preds, incs
+    return preds, incs, phi_nb_s
 
 
 # ═══════════════════════════════════════════════════════════════════════════
 # F7 — fit_total (시즌별 관측 vs 모델 총계)
 # ═══════════════════════════════════════════════════════════════════════════
-def fig_F7(preds, obs):
-    fig, axes = plt.subplots(1, 3, figsize=(W_DOUBLE, 2.6),
+def fig_F7(preds, obs, phi_nb_s=None):
+    """Weekly total (all-age sum): posterior mean line + observed points.
+    CI band 제거 — mean 곡선과 관측점만 표시."""
+    fig, axes = plt.subplots(1, 3, figsize=(W_DOUBLE, 2.8),
                               constrained_layout=True, sharey=False)
+    _cache = {}                             # season → {mean, obs} 곡선 캐시
     for k, s in enumerate(SEASONS):
         ax = axes[k]
-        pr = preds[s].sum(axis=2)          # (N, 52)
+        pr = preds[s].sum(axis=2)          # (N, 52) posterior mean per sample
         o = obs[s].sum(axis=1)              # (52,)
         wks = np.arange(pr.shape[1])
         mean_pr = pr.mean(axis=0)
-        lo, hi = np.quantile(pr, [0.05, 0.95], axis=0)
+        _cache[s] = {"mean": mean_pr.tolist(), "obs": o.tolist()}
         col = COL_SEASON[s]
-        ax.fill_between(wks, lo, hi, color=col, alpha=0.25,
-                         label="Model 90% CI" if k == 0 else None)
         ax.plot(wks, mean_pr, color=col, lw=1.6,
-                label="Model mean" if k == 0 else None)
+                label="Posterior mean" if k == 0 else None)
         ax.plot(wks[:len(o)], o, "o", color=COL_ZERO, ms=2.5, alpha=0.75,
-                label="Observed" if k == 0 else None)
+                label="Observed (NHIS)" if k == 0 else None)
         ax.set_xlabel("Epidemic week")
         if k == 0:
             ax.set_ylabel("Weekly incidence (NHIS)")
-        ax.text(0.03, 0.95, s, transform=ax.transAxes, fontsize=8,
-                fontweight="bold", va="top", ha="left", color=col)
-    axes[0].legend(loc="upper right", frameon=False, fontsize=7)
-    fig.text(0.5, -0.06,
-              "Observation timing = symptom onset (I₁→I₂ influx).",
-              ha="center", fontsize=7, color=COL_ZERO)
+        # 연도는 패널 제목으로 (곡선과 겹치지 않게)
+        ax.set_title(s, color=col, fontsize=9, fontweight="bold")
+    # 범례: 그림 아래 중앙 (3 패널 공통 항목, 곡선과 절대 겹침 없음)
+    # "Posterior mean"은 검정 단일 선 (선이 하나뿐이라 season 색 매핑 불필요).
+    from matplotlib.lines import Line2D as _L2D
+    _handles = [
+        _L2D([0], [0], color="black", lw=1.6, label="Posterior mean"),
+        _L2D([0], [0], marker="o", color=COL_ZERO, ls="",
+              markersize=4, alpha=0.75, label="Observed (NHIS)"),
+    ]
+    fig.legend(handles=_handles, loc="lower center",
+                bbox_to_anchor=(0.5, -0.13), ncol=2, frameon=False,
+                fontsize=8, handlelength=2.2, columnspacing=2.2)
+    # 곡선 캐시 저장 → 이후 순수 시각화(legend/색/위치) 조정은 재적합 없이 가능
+    try:
+        import json as _json
+        (REPO / "outputs/eda/fit_total_curves.json").write_text(
+            _json.dumps(_cache))
+    except Exception as _e:
+        print(f"  [warn] fit_total curve cache 저장 실패: {_e}")
     savefig(fig, "fit_total")
 
 
@@ -345,7 +363,7 @@ def fig_F11():
                               constrained_layout=True, sharey=True, sharex=True)
     # 공통 vmax per 채널
     vmax = {c: max(term[c].max(), vac[c].max()) for c in channels}
-    for row, (m, title) in enumerate([(term, "Term"), (vac, "Vacation")]):
+    for row, (m, title) in enumerate([(term, "School term"), (vac, "Winter break")]):
         for col, ch in enumerate(channels):
             ax = axes[row, col]
             im = ax.imshow(m[ch], origin="lower", cmap="viridis",
@@ -365,7 +383,7 @@ def fig_F11():
                               fraction=0.04, pad=0.02, shrink=0.9)
     fig.text(0.5, -0.03,
               "Contact matrices [contacted, participant]. School channel "
-              "collapses in vacation.",
+              "collapses in winter break.",
               ha="center", fontsize=7, color=COL_ZERO)
     savefig(fig, "contact_matrices")
 
@@ -431,9 +449,9 @@ def main():
     obs = load_obs(C); print("  obs loaded (3 seasons × 52 wk × 6 age)")
 
     print("\n[posterior predictive]")
-    preds, incs = posterior_predictive(C, n_samples=N_POST)
+    preds, incs, phi_nb_s = posterior_predictive(C, n_samples=N_POST)
 
-    fig_F7(preds, obs); print("  F7 fit_total")
+    fig_F7(preds, obs, phi_nb_s); print("  F7 fit_total")
     fig_F8(C, preds, obs); print("  F8 fit_byage")
     fig_F9(C, incs); print("  F9 epicurve_byage")
     fig_F10(C, incs); print("  F10 baseline_attack_byage")

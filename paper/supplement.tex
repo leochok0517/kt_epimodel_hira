@@ -1,0 +1,247 @@
+\documentclass[12pt]{article}
+\usepackage[a4paper, margin=1in]{geometry}
+\usepackage{amsmath, amssymb}
+\usepackage{graphicx}
+\graphicspath{{figures/}}
+\usepackage{booktabs}
+\usepackage{caption}
+\usepackage{float}
+\usepackage{hyperref}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+
+% Number figures/tables as S1, S2, ...
+\renewcommand{\thefigure}{S\arabic{figure}}
+\renewcommand{\thetable}{S\arabic{table}}
+\renewcommand{\thesection}{S\arabic{section}}
+
+\title{\vspace{-1.5em}Supplementary Material\\[0.4em]
+\large An age-structured contact model of sick-leave and school-absence effects on seasonal influenza in Korea}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+\vspace{-2em}
+
+This document provides supplementary tables and figures referenced in the main
+text: season-specific population data and the robustness of the calibration to
+the population input (Section~\ref{sec:s_pop}); the contact structure
+(Section~\ref{sec:s_contact}); the age-resolved model fit (Section~\ref{sec:s_fit});
+baseline epidemic dynamics (Section~\ref{sec:s_dyn}); age-specific policy effects
+across all three seasons (Section~\ref{sec:s_byage}); the policy dose--response
+(Section~\ref{sec:s_dose}); and additional sensitivity analyses
+(Section~\ref{sec:s_sens}).
+
+% ======================================================================
+\section{Population data and robustness to the population input}
+\label{sec:s_pop}
+
+The model uses season-specific resident-registration populations for the Seoul
+Capital Area (Seoul, Incheon, and Gyeonggi), taken from the Statistics Korea
+(KOSIS) table of resident-registration population by administrative district
+(\emph{eup}/\emph{myeon}/\emph{dong}) and 5-year age band, aggregated to the
+15 model age bands (with $70+$ the sum of $70$--$74$ through $100+$) and to the
+three provinces. Each season uses the population of June of its peak year:
+2016 for 2016--17, 2017 for 2017--18, and 2019 for 2019--20 (Table~\ref{tab:s_pop}).
+The declining child and rising elderly shares across seasons reflect the
+population aging of the study area.
+
+\begin{table}[H]
+\centering
+\caption{Season-specific resident-registration population by age band (Seoul,
+Incheon, and Gyeonggi combined; June of each peak year).}
+\label{tab:s_pop}
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+Age band & 2016--17 (Jun 2016) & 2017--18 (Jun 2017) & 2019--20 (Jun 2019) \\
+\midrule
+0-4 & 1,105,037 & 1,042,254 & 933,536 \\
+5-9 & 1,176,897 & 1,172,633 & 1,156,547 \\
+10-14 & 1,164,698 & 1,167,674 & 1,146,612 \\
+15-19 & 1,520,515 & 1,439,181 & 1,311,672 \\
+20-24 & 1,783,137 & 1,755,477 & 1,689,028 \\
+25-29 & 1,753,436 & 1,822,973 & 1,945,898 \\
+30-34 & 1,905,403 & 1,807,548 & 1,761,455 \\
+35-39 & 2,121,660 & 2,146,295 & 2,095,520 \\
+40-44 & 2,181,750 & 2,119,022 & 2,028,568 \\
+45-49 & 2,321,126 & 2,349,511 & 2,312,574 \\
+50-54 & 2,069,910 & 2,058,334 & 2,164,205 \\
+55-59 & 2,028,672 & 2,080,066 & 2,091,185 \\
+60-64 & 1,463,595 & 1,546,135 & 1,774,446 \\
+65-69 & 997,193 & 1,048,866 & 1,153,998 \\
+70+ & 1,997,436 & 2,123,894 & 2,360,555 \\
+\midrule
+\textbf{Total} & 25,590,465 & 25,679,863 & 25,925,799 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Replacing a single reference-year population (January 2023) with these
+year-specific populations, and re-fitting, leaves the calibration essentially
+unchanged (Table~\ref{tab:s_refit}): the channel allocation shifts by at most
+$0.004$ per channel, season-specific $R_0$ by less than $1\%$, and no
+$0\notin\text{CI}$ status changes. The adult-down / school-age-up redistribution
+direction and the school-over-sick-leave ordering held in all three seasons
+under both population inputs.
+
+\begin{table}[H]
+\centering
+\caption{Posterior comparison under a single reference-year population (2023) versus
+season-specific populations. Values are posterior means; channel shares are shared
+across seasons, $R_0$ is season-specific.}
+\label{tab:s_refit}
+\begin{tabular}{@{}lccc@{}}
+\toprule
+Parameter & Single-year (2023) & Season-specific & Change \\
+\midrule
+$\pi_{\mathrm{home}}$ & $0.445$ & $0.442$ & $-0.003$ \\
+$\pi_{\mathrm{work}}$ & $0.294$ & $0.298$ & $+0.004$ \\
+$\pi_{\mathrm{school}}$ & $0.065$ & $0.065$ & $\phantom{+}0.000$ \\
+$\pi_{\mathrm{other}}$ & $0.195$ & $0.195$ & $\phantom{+}0.000$ \\
+\addlinespace
+$R_0$ (2016--17) & $2.276$ & $2.287$ & $+0.5\%$ \\
+$R_0$ (2017--18) & $2.071$ & $2.078$ & $+0.3\%$ \\
+$R_0$ (2019--20) & $2.164$ & $2.169$ & $+0.3\%$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ======================================================================
+\section{Contact structure}
+\label{sec:s_contact}
+
+Contacts are represented by four channel-specific matrices (home, work, school,
+other), each $15\times15$ over the age bands, measured separately for school term
+and winter break by the NIMS contact survey (main text). The time-varying matrix
+$C(t)$ blends the two by a trapezoidal weight $h(t)$ that rises over the winter
+break: transition onset at day 113, plateau over days 127--162, and return by
+day 183. Figure~\ref{fig:s_contact} shows the school-term and winter-break matrices for
+each channel; the marked reduction in the school block during the winter break is what
+the calendar switch encodes.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\linewidth]{contact_matrices}
+\caption{Age-structured contact matrices by channel (home, work, school, other),
+school term versus the winter break.}
+\label{fig:s_contact}
+\end{figure}
+
+% ======================================================================
+\section{Age-resolved model fit}
+\label{sec:s_fit}
+
+Figure~\ref{fig:s_fitage} shows the observed NHIS incidence and the posterior
+model by age band for each season, complementing the aggregate fit in the main
+text. The over-prediction of epidemic width discussed in the main text is most
+visible in the sharp 2016--17 season and in the youngest band.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\linewidth]{fit_byage}
+\caption{Observed (points) versus posterior model (line with 90\% credible band)
+incidence by age band and season.}
+\label{fig:s_fitage}
+\end{figure}
+
+% ======================================================================
+\section{Baseline epidemic dynamics}
+\label{sec:s_dyn}
+
+Figure~\ref{fig:s_epicurve} shows the modelled age-specific incidence over the
+season at baseline (no intervention), and Figure~\ref{fig:s_baseline} the
+baseline final attack rate by age. School-age children carry the highest attack
+rates and peak early, consistent with the school channel acting as the epidemic
+engine.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.9\linewidth]{epicurve_byage}
+\caption{Modelled age-specific epidemic curves at baseline.}
+\label{fig:s_epicurve}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.75\linewidth]{baseline_attack_byage}
+\caption{Baseline final attack rate by age band.}
+\label{fig:s_baseline}
+\end{figure}
+
+% ======================================================================
+\section{Age-specific policy effects across seasons}
+\label{sec:s_byage}
+
+The main text shows the by-age effect in two metrics for the representative 2019--20
+season. Figure~\ref{fig:s_byage} extends this to all three seasons, in per-capita
+(attack rate) and absolute (count) terms. The rate panels show that sick leave's
+child-ward redistribution is clearest and most significant in the sharp 2016--17
+season, weaker and non-significant in the mild 2017--18 season, and intermediate in
+2019--20; the count panels show that the adult bands dominate the averted totals in
+every season.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.92\linewidth]{byage_rate_vs_number_allseasons}
+\caption{By-age averted effect of sick leave and school absence, all three seasons,
+in per-capita (left) and absolute (right) terms. Positive = averted; filled markers
+$0\notin$ CI, open markers $0\in$ CI.}
+\label{fig:s_byage}
+\end{figure}
+
+% ======================================================================
+\section{Policy dose--response}
+\label{sec:s_dose}
+
+Figure~\ref{fig:s_dose} shows total averted infection as a function of policy
+intensity for sick leave and school absence, at the identified crowding scale.
+School absence dominates across the full intensity range.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.9\linewidth]{policy_intensity}
+\caption{Total averted infection versus policy intensity for sick leave and
+school absence.}
+\label{fig:s_dose}
+\end{figure}
+
+% ======================================================================
+\section{Additional sensitivity analyses}
+\label{sec:s_sens}
+
+Figures~\ref{fig:s_kappa}--\ref{fig:s_termvac} extend the sensitivity battery
+summarized in the main text. Figure~\ref{fig:s_kappa} shows how sick leave's
+averted effect and the age redistribution vary with the crowding coefficient
+$\kappa$; the net effect crosses zero near $\kappa\approx0.51$, above the
+empirically identified range. Figure~\ref{fig:s_r0} shows that the child-ward
+winter break transfer does not reverse sign across the adult-immunity / $R_0$ grid.
+Figure~\ref{fig:s_termvac} decomposes the sick-leave effect by age across the
+school-term and winter-break windows, showing that the redistribution toward children
+intensifies during the winter break without reversing direction.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.85\linewidth]{sens_S2_kappa_upper_CI}
+\caption{Sensitivity to the crowding coefficient $\kappa$: averted infection and
+age redistribution across the $\kappa$ sweep, with credible intervals.}
+\label{fig:s_kappa}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.85\linewidth]{sens_S3_R0_transition_heatmap}
+\caption{Sensitivity to adult initial immunity and $R_0$: sign of the child-ward
+winter break transfer across the parameter grid.}
+\label{fig:s_r0}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.9\linewidth]{sickleave_term_vs_vacation}
+\caption{Sick-leave effect by age in the school-term versus winter-break windows (all
+age groups), with credible intervals.}
+\label{fig:s_termvac}
+\end{figure}
+
+\end{document}

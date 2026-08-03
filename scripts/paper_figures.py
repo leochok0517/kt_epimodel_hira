@@ -306,40 +306,57 @@ def fig_F4():
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# F5 — holiday (아동 Δattack, 학기 vs 방학 창, 3시즌)
+# F5 — holiday (아동 Δattack, school-term vs winter-break, 3시즌 × 3연령)
 # ═══════════════════════════════════════════════════════════════════════════
-# 참고: policy_posterior_v4.json 는 term-window 만 계산. 방학창 데이터는 없음.
-# 대신 outputs/eda/kappa_no_eta_presymp_holiday.json (이전 job 5) 있으나
-# posterior CI 없음 → point-est 값과 posterior CI 결합.
-# 여기서는 term-window (기본 policy_posterior_v4) 만 사용해 아동 3연령 그룹
-# Δattack 을 시즌×연령 표시. 방학창 별도 없다면 caption 에 명시.
+# season-pop policy JSON 은 term + vac 두 창 모두 저장 (sick_d_by_age_term,
+# sick_d_by_age_vac).  아동 3연령 그룹에서 두 창을 dodge 하여 비교.
 def fig_F5():
-    fig, ax = plt.subplots(figsize=(W_DOUBLE * 0.85, 3.2), constrained_layout=True)
+    fig, ax = plt.subplots(figsize=(W_DOUBLE * 0.95, 3.4), constrained_layout=True)
     child_ages = ["0-5", "6-11", "12-17"]
     xs = np.arange(len(child_ages))
-    dx = 0.18
+    dx = 0.10
+    def _key(pol_s, win):
+        if win == "term":
+            return pol_s.get("sick_d_by_age_term") or pol_s.get("sick_by_age", {})
+        return pol_s.get("sick_d_by_age_vac", {})
+
     for j, s in enumerate(SEASONS):
-        offs = (j - 1) * dx
-        for i, ag in enumerate(child_ages):
-            v = POL[s]["sick_by_age"][ag]
-            sig = is_sig(v["q05"], v["q95"])
-            yerr = [[v["mean"] - v["q05"]], [v["q95"] - v["mean"]]]
-            col = COL_SEASON[s]
-            ax.errorbar([xs[i] + offs], [v["mean"]], yerr=yerr,
-                        color=col, lw=1.0, capsize=2, zorder=3,
-                        **marker_style(sig, col))
-        ax.plot([], [], color=COL_SEASON[s], marker="o", ls="",
-                label=s, markersize=5)
+        col = COL_SEASON[s]
+        base_off = (j - 1) * 0.28
+        for wi, (win, mk) in enumerate([("term", "o"), ("vac", "s")]):
+            src = _key(POL[s], win)
+            offs = base_off + (wi - 0.5) * dx
+            for i, ag in enumerate(child_ages):
+                v = src.get(ag, {})
+                if not v: continue
+                sig = is_sig(v["q05"], v["q95"])
+                # Averted attack rate = -Δattack (positive = averted, negative
+                # = transferred to children), consistent with F3/F4.
+                mean_av = -v["mean"]
+                yerr = [[v["q95"] - v["mean"]], [v["mean"] - v["q05"]]]
+                ax.errorbar([xs[i] + offs], [mean_av], yerr=yerr,
+                            color=col, lw=1.0, capsize=2, zorder=3,
+                            marker=mk, markersize=6,
+                            markerfacecolor=(col if sig else "white"),
+                            markeredgecolor=col, markeredgewidth=1.2)
+        ax.plot([], [], color=col, marker="o", ls="", label=s, markersize=5)
+    # 창 구분용 marker legend
+    win_handles = [
+        Line2D([0], [0], marker="o", color=COL_ZERO, ls="",
+                 markersize=6, label="School term (days 70–113)"),
+        Line2D([0], [0], marker="s", color=COL_ZERO, ls="",
+                 markersize=6, label="Winter break (days 113–183)"),
+    ]
     zero_line(ax)
     ax.set_xticks(xs); ax.set_xticklabels(child_ages)
     ax.set_xlabel("Age group (children)")
-    ax.set_ylabel(r"$\Delta$ attack rate (%p), sick leave in term window")
-    ax.legend(title="Season", frameon=False, loc="upper left", fontsize=7.5,
-               title_fontsize=8)
-    fig.text(0.5, -0.03,
-              "Term window (season days 70–113). Positive = infection transferred "
-              "to children.  Posterior 90% CI shown; sign consistent across seasons.",
-              ha="center", fontsize=7, color=COL_ZERO)
+    ax.set_ylabel(r"Averted attack rate (%p), sick leave")
+    leg1 = ax.legend(title="Season", frameon=False, fontsize=7.5,
+                      title_fontsize=8, loc="upper left",
+                      bbox_to_anchor=(1.01, 1.0))
+    ax.add_artist(leg1)
+    ax.legend(handles=win_handles, frameon=False, fontsize=7.5,
+               loc="lower left", bbox_to_anchor=(1.01, 0.0))
     savefig(fig, "holiday")
 
 
