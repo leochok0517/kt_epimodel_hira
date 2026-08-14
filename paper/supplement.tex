@@ -244,4 +244,87 @@ age groups), with credible intervals.}
 \label{fig:s_termvac}
 \end{figure}
 
+% ======================================================================
+\section{Reproduction-number decomposition (all seasons)}
+\label{sec:s_repro}
+
+This section complements the main-text reproduction-number decomposition
+(Section~\ref{sec:repro}, shown for 2019--20) with the remaining two seasons and
+the underlying values. Because the channel allocation $\pi$ is shared across
+seasons, the channel and age \emph{shares} are essentially identical across
+seasons; only the absolute scale ($R_0$) differs. Table~\ref{tab:s_repro}
+lists the decomposition, and Figures~\ref{fig:s_re1617}--\ref{fig:s_re1718} show
+$R_e(t)$ for 2016--17 and 2017--18.
+
+\begin{table}[H]
+\centering
+\caption{Reproduction-number decomposition (posterior mean [90\% CI]).
+Channel shares $R_c/R_0$ with the amplification ratio relative to the
+transmissibility share $\pi_c$; age shares $R_b/R_0$. Shares are shared across
+seasons ($\pi$ common); the KDCA epidemic-advisory dates are season-specific.}
+\label{tab:s_repro}
+\begin{tabular}{@{}llr@{}}
+\toprule
+\multicolumn{2}{@{}l}{\textit{Channel} ($R_c/R_0$, \%)} & $R_c/\pi_c$ \\
+\midrule
+home   & $44.6\ [36.8, 51.9]$ & $1.0\times$ \\
+work   & $3.8\ [3.0, 4.6]$    & $0.13\times$ \\
+school & $24.9\ [21.2, 29.1]$ & $3.9\times$ \\
+other  & $26.6\ [21.7, 32.3]$ & $1.4\times$ \\
+\midrule
+\multicolumn{3}{@{}l}{\textit{Age} ($R_b/R_0$, \%)} \\
+\midrule
+\multicolumn{2}{@{}l}{0--5} & $52$ \\
+\multicolumn{2}{@{}l}{6--11} & $18$ \\
+\multicolumn{2}{@{}l}{12--17} & $7$ \\
+\multicolumn{2}{@{}l}{18--44} & $17$ \\
+\multicolumn{2}{@{}l}{45--64} & $6$ \\
+\multicolumn{2}{@{}l}{65+} & $1$ \\
+\midrule
+\multicolumn{3}{@{}l}{\textit{KDCA epidemic advisory (issued / lifted)}} \\
+\midrule
+\multicolumn{2}{@{}l}{2016--17} & 8 Dec / 2 Jun \\
+\multicolumn{2}{@{}l}{2017--18} & 1 Dec / 25 May \\
+\multicolumn{2}{@{}l}{2019--20} & 15 Nov / 27 Mar \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\linewidth]{repro_Re_readable_2016-2017}
+\caption{Effective reproduction number $R_e(t)$ by scenario, 2016--17, with model
+incidence (right axis), the policy application window (dashed lines), and the baseline
+channel components of $R_e(t)$.}
+\label{fig:s_re1617}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\linewidth]{repro_Re_readable_2017-2018}
+\caption{Effective reproduction number $R_e(t)$ by scenario, 2017--18, with model
+incidence (right axis), the policy application window (dashed lines), and the baseline
+channel components of $R_e(t)$.}
+\label{fig:s_re1718}
+\end{figure}
+
+Figure~\ref{fig:s_chdelta} decomposes the policy effect by channel:
+$\Delta R_e^{c}(t) = R_e^{c}(t)_{\text{policy}} - R_e^{c}(t)_{\text{baseline}}$
+(2019--20). Each policy suppresses its own channel --- school absence the school
+channel (by up to $\approx 0.24$ during the school term) and sick leave the
+workplace channel (by up to $\approx 0.06$) --- with a small compensating rebound
+in the other channels (the redistribution). During the winter break the school
+channel has already collapsed at baseline, so school absence has little left to
+act on, consistent with the timing analysis in the main text.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\linewidth]{repro_channel_delta}
+\caption{Policy-induced change in each channel's effective reproduction number,
+$\Delta R_e^{c}(t)$ = policy $-$ baseline (2019--20), for sick leave (left) and
+school absence (right). Dashed lines mark the policy application window, the shaded
+band the winter break. Note the different vertical scales.}
+\label{fig:s_chdelta}
+\end{figure}
+
 \end{document}

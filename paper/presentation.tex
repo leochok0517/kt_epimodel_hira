@@ -31,7 +31,7 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \section{Background}
 
-\begin{frame}\frametitle{Two absenteeism levers, unequal evidence}
+\begin{frame}\frametitle{The evidence for sick leave is limited}
     \begin{itemize}
         \item Keeping infectious individuals out of a shared setting is a standard
               non-pharmaceutical response to influenza:
@@ -43,16 +43,16 @@
               Keeping adults home from work is \textbf{far less established}.
         \item The intuitive case for both is the same: an infectious person who
               stays home cannot infect the colleagues or classmates they would
-              have met --- so evaluations have concentrated on the \textbf{size of
-              that reduction}.
-        \item The two levers have rarely been compared on the \textbf{same
-              footing}, in one model and for the same seasons.
+              have met --- so evaluations have concentrated on the \textbf{size and
+              direction of that reduction}.
+        \item Here we evaluate both policies with a single, common method, in one
+              model and for the same seasons.
     \end{itemize}
 \end{frame}
 
-\begin{frame}\frametitle{What a single ``effect size'' omits}
-    For an age-structured respiratory pathogen, an aggregate effect size hides
-    four things:
+\begin{frame}\frametitle{Key modelling assumptions}
+    For an age-structured respiratory pathogen, a single aggregate effect size
+    leaves out four things:
     \begin{itemize}
         \item \textbf{Heterogeneity.} Susceptibility, attack rate, and contacts
               vary sharply by age; children are among the most susceptible and,
@@ -75,9 +75,11 @@
     The model lets us:
     \begin{itemize}
         \item[(i)] compare sick-leave and school-absence policies at matched
-              intensity, on the same footing, with credible intervals;
-        \item[(ii)] locate where in the workplace-transmission / crowding
-              parameter space sick leave helps versus harms;
+              intensity, within a single consistent methodology, with credible
+              intervals;
+        \item[(ii)] identify the conditions --- how much transmission occurs at
+              work, and how crowded the home becomes --- under which sick leave is
+              net-beneficial versus net-harmful;
         \item[(iii)] decompose outcomes by age and by metric (rate vs.\ count);
         \item[(iv)] ask how the same sick-leave policy behaves in different phases
               of the epidemic, split by the winter-break calendar.
@@ -192,8 +194,9 @@
               $s_f(t)=1+0.9\cos\!\big(\tfrac{2\pi(t-105)}{365}\big)$, peaking in
               mid-December.
         \item \textbf{Vaccination:} time-distributed leaky-protection hazard
-              $v(t)=\tfrac{-\ln(1-C)}{Z}\,\mathrm{density}(t)$, normalized to reach
-              target coverage $C=0.30$; efficacy $\mathrm{VE}=0.5$.
+              $v_a(t)=\tfrac{-\ln(1-C_a)}{Z}\,\mathrm{density}(t)$, reaching an
+              age-specific target coverage $C_a$ ($0.30$--$0.82$; children and
+              elderly higher); efficacy $\mathrm{VE}=0.5$.
     \end{itemize}
 \end{frame}
 
@@ -236,29 +239,9 @@
     $I_{23}$.}
 \end{frame}
 
-\begin{frame}\frametitle{Transmissibility allocation and \texorpdfstring{$R_0$}{R0}}
-    \begin{itemize}
-        \item Scale and allocation are separated:
-        \[
-            \beta_c = \frac{R_0}{\rho_{\mathrm{eff}}(\pi,\phi)}\,\pi_c,
-            \qquad \textstyle\sum_c \pi_c = 1,
-        \]
-        with $R_0$ setting the size and $\pi=(\pi_{\mathrm{home}},
-        \pi_{\mathrm{work}},\pi_{\mathrm{school}},\pi_{\mathrm{other}})$ the allocation.
-        \item $\rho_{\mathrm{eff}}$ is the dominant next-generation eigenvalue,
-              adjusted for presymptomatic infectiousness:
-              $\rho_{\mathrm{eff}}=\rho\cdot(w+2)/3$ (factor $0.740$), keeping
-              $\beta \leftrightarrow R_0$ consistent under $I_1$ attenuation.
-        \item $\pi$ is informed by channel-specific priors and, decisively, by
-              multi-season data --- the school pin is strong (to prevent
-              seasonality being absorbed there); the work pin is relaxed
-              ($\sigma_{\mathrm{pin}}=0.10$), so the data fix $\pi_{\mathrm{work}}$.
-    \end{itemize}
-\end{frame}
-
 \begin{frame}\frametitle{Parameters: fixed constants}
     \centering
-    \small
+    \resizebox{\textwidth}{!}{%
     \begin{tabular}{@{}llll@{}}
         \toprule
         Symbol & Description & Value & Note \\
@@ -266,17 +249,16 @@
         $1/\sigma$ & Latent period & $2.0$ d & standard \\
         $1/\gamma$ & Mean infectious period & $4.0$ d & standard \\
         $n$ & Erlang sub-stages & $3$ & rate $3\gamma$ \\
-        $w$ & Presymptomatic infectiousness & $0.22$ & infl.~A share $9.6\%$ \\
-        $(w{+}2)/3$ & NGM correction & $0.740$ & $\beta\!\leftrightarrow\!R_0$ \\
+        $w$ & Presymptomatic infectiousness & $0.22$ & influenza~A presymptomatic share $9.6\%$ \\
         $\mathrm{VE}$ & Vaccine efficacy & $0.5$ & standard \\
-        $s_f(t)$ & Seasonal forcing & $1+0.9\cos\frac{2\pi(t-105)}{365}$ & peak mid-Dec \\
-        $C$ & Target vaccine coverage & $0.30$ & Gaussian uptake \\
+        $s_f(t)$ & Seasonal forcing & $1+0.9\cos\frac{2\pi(t-105)}{365}$ & peak mid-December \\
+        $C_a$ & Target vaccine coverage & age-specific, $0.30$--$0.82$ & children \& elderly higher \\
         \bottomrule
-    \end{tabular}
-    \par\vspace{2mm}
+    \end{tabular}}
+    \par\vspace{3mm}
     {\footnotesize The infectious period is an Erlang(3) chain
-    $E\to I_1\to I_2\to I_3\to R$; $I_1$ presymptomatic (weight $w$, no policy),
-    $I_2,I_3$ symptomatic. The NGM correction leaves $R_0$ unchanged.}
+    $E\to I_1\to I_2\to I_3\to R$; $I_1$ is presymptomatic (weight $w$, not subject
+    to policy), $I_2,I_3$ are symptomatic (policy acts here).}
 \end{frame}
 
 \begin{frame}\frametitle{Parameters: age-specific vectors}
@@ -320,50 +302,20 @@
     \end{itemize}
 \end{frame}
 
-\begin{frame}\frametitle{Bayesian calibration (NUTS)}
-    \begin{columns}[T]
-        \column{0.5\textwidth}
-        \begin{itemize}\small
-            \item JAX / diffrax / NumPyro; No-U-Turn Sampler.
-            \item Joint calibration shares one allocation $\pi$ across seasons;
-                  season-specific $R_0$ and NB dispersion vary.
-            \item $500{+}500 \times 4$ chains, replicated $\Rightarrow$ 4000 draws;
-                  \textbf{0 divergences}, $\hat R\le1.05$ for $\pi$.
-        \end{itemize}
-        \column{0.5\textwidth}
-        \centering
-        \small
-        \begin{tabular}{@{}lc@{}}
-            \toprule
-            Parameter & Posterior mean [95\% CI] \\
-            \midrule
-            $\pi_{\mathrm{home}}$   & $0.442\ [0.371,0.513]$ \\
-            $\pi_{\mathrm{work}}$   & $0.298\ [0.241,0.356]$ \\
-            $\pi_{\mathrm{school}}$ & $0.065\ [0.056,0.074]$ \\
-            $\pi_{\mathrm{other}}$  & $0.195\ [0.158,0.236]$ \\
-            \addlinespace
-            $R_0$ 16--17 & $2.287\ [2.21,2.37]$ \\
-            $R_0$ 17--18 & $2.078\ [2.01,2.15]$ \\
-            $R_0$ 19--20 & $2.169\ [2.10,2.25]$ \\
-            $\phi_{\mathrm{NB}}$ & $1.43\ [1.26,1.61]$ \\
-            \bottomrule
-        \end{tabular}
-    \end{columns}
-\end{frame}
-
 \begin{frame}\frametitle{Identifiability and policy set-up}
     \begin{itemize}
         \item \textbf{Workplace transmission is not identifiable from one season:}
               freely estimated, $\beta_{\mathrm{work}}$ rails toward zero in
               88--94\% of single-season fits (home and work matrices are similar
               among working-age adults). The multi-season joint fit closes this gap.
-        \item \textbf{Policy operationalization:} a time-windowed reduction in
-              retention, $p_{\mathrm{eff}}(t)=1-w_{\mathrm{pol}}(t)(1-p)$; school
-              and work operators act on independent windows and channels, only on
+        \item \textbf{How a policy is applied in the model:} during a set time
+              window, a fraction of symptomatic people who would have attended work
+              (sick leave) or school (school absence) instead stay home; the two
+              operators act on separate channels and only on the symptomatic stages
               $I_{23}$.
         \item Comparisons use posterior forward simulation, $N=500$ draws per
-              season, sweeping intensity $p\in\{1,0.8,0.6,0.4,0.2\}$ and crowding
-              scale $\mu\in\{0.5,1,1.5\}$.
+              season, sweeping intensity $p\in\{1,0.8,0.6,0.4,0.2\}$ and the
+              adult crowding coefficient $\kappa$ from $0.2$ to $1.0$.
         \item The epidemic splits by the winter-break calendar into a school-term
               and a winter-break window; we report window-length-robust quantities.
     \end{itemize}
@@ -386,7 +338,7 @@
     \end{columns}
 \end{frame}
 
-\begin{frame}\frametitle{Baseline dynamics: the school channel is the engine}
+\begin{frame}\frametitle{Baseline: most infection occurs in school-age children}
     \begin{columns}[T]
         \column{0.5\textwidth}
         \centering
@@ -401,23 +353,6 @@
     {\small School-age children carry the highest attack rates and peak early;
     the school channel drives the epidemic despite a small fitted share
     ($\pi_{\mathrm{school}}\approx0.065$).}
-\end{frame}
-
-\begin{frame}\frametitle{The channel allocation is identified across seasons}
-    \begin{columns}[T]
-        \column{0.52\textwidth}
-        \begin{itemize}\small
-            \item A single shared $\pi$ reproduces all three seasons at negligible
-                  cost in fit --- a multi-year invariant, not a per-season nuisance.
-            \item $\pi_{\mathrm{work}}=0.298$ (95\% CI $[0.24,0.36]$) is identified
-                  jointly, near the Korean contact-survey value ($\approx$0.29) and
-                  far above a single-season collapse.
-        \end{itemize}
-        \column{0.48\textwidth}
-        \centering
-        \includegraphics[width=\textwidth]{nuts_posterior}\\
-        {\scriptsize Joint posterior: four channel shares and season $R_0$.}
-    \end{columns}
 \end{frame}
 
 \begin{frame}\frametitle{School absence is effective; sick leave is small and uncertain}
@@ -469,45 +404,21 @@
 
 \begin{frame}\frametitle{Sick leave redistributes from adults toward children}
     \begin{columns}[T]
-        \column{0.5\textwidth}
+        \column{0.46\textwidth}
         \begin{itemize}\small
-            \item Adult attack rate falls ($18$--$64$); school-age children's rises
-                  ($0$--$17$) --- same direction in \textbf{3 of 3} seasons.
-            \item Signature of a parent-to-child household pathway; the elderly are
-                  essentially unaffected.
-            \item Small and only partly significant --- a redistribution tendency,
-                  not established harm.
+            \item \textbf{Per-capita (top, averted attack rate):} adults down,
+                  children \textbf{below zero} (infection added). Same direction in
+                  \textbf{3 of 3} seasons; the elderly unaffected.
+            \item \textbf{Absolute counts (bottom):} adult bands dominate the
+                  averted total (18--44 $\sim$10 million; 2019--20: $\approx$28k
+                  adult averted vs.\ $\approx$4k added child).
+            \item ``Who benefits'' thus depends on the metric; the effect is small
+                  and only partly significant --- a tendency, not established harm.
         \end{itemize}
-        \column{0.5\textwidth}
+        \column{0.54\textwidth}
         \centering
-        \includegraphics[width=\textwidth]{policy_posterior_byage}
+        \includegraphics[width=\linewidth,height=0.86\textheight,keepaspectratio]{byage_2metric_main}
     \end{columns}
-\end{frame}
-
-\begin{frame}\frametitle{Who bears the redistribution depends on the metric}
-    \begin{columns}[T]
-        \column{0.5\textwidth}
-        \begin{itemize}\small
-            \item \textbf{Per-capita (attack rate):} children increase.
-            \item \textbf{Absolute counts:} adults dominate (18--44 population
-                  $\sim$10 million).
-            \item 2019--20: $\approx$28{,}151 adult infections averted vs.\
-                  $\approx$4{,}349 additional child infections (net $+23{,}492$).
-            \item ``Who benefits'' has no metric-free answer --- policy appraisal
-                  must state its metric.
-        \end{itemize}
-        \column{0.5\textwidth}
-        \centering
-        \includegraphics[width=\textwidth]{rate_vs_number}
-    \end{columns}
-\end{frame}
-
-\begin{frame}\frametitle{The redistribution direction holds across all seasons}
-    \centering
-    \includegraphics[height=0.74\textheight]{byage_rate_vs_number_allseasons}\\
-    {\scriptsize By-age averted effect, all three seasons: per-capita (left),
-    absolute (right). Positive = averted; filled = $0\notin$CI. Adult bands
-    dominate the averted counts in every season.}
 \end{frame}
 
 \begin{frame}\frametitle{The transfer toward children is larger during the winter break}
@@ -547,31 +458,18 @@
     \begin{columns}[T]
         \column{0.5\textwidth}
         \begin{itemize}\small
-            \item Sick leave turns net-harmful only above $\kappa\approx0.51$ ---
-                  \textbf{above the empirically identified range}.
-            \item Over the plausible ($\pi_{\mathrm{work}}$, $\kappa$) region the
-                  regime is net-beneficial, though small.
+            \item Sick leave turns net-harmful only above $\kappa\approx0.51$.
+            \item Our time-use--based estimate ($\kappa\approx0.34$--$0.40$) sits
+                  \textbf{below} this threshold, so the regime is net-beneficial,
+                  though small.
+            \item But larger household-contact increases have been reported
+                  ($+50$ to $+100\%$; Ferguson et al.), which would reach or exceed
+                  $\kappa\approx0.51$ --- a net-harmful regime cannot be ruled out
+                  under those assumptions.
         \end{itemize}
         \column{0.5\textwidth}
         \centering
         \includegraphics[width=\textwidth]{sens_S1_piwork_kappa_heatmap}
-    \end{columns}
-\end{frame}
-
-\begin{frame}\frametitle{Sensitivity: immunity / \texorpdfstring{$R_0$}{R0} and the child-ward transfer}
-    \begin{columns}[T]
-        \column{0.5\textwidth}
-        \begin{itemize}\small
-            \item The child-ward winter-break transfer does not reverse sign across
-                  the adult-immunity / $R_0$ grid.
-            \item The redistribution conclusions are stress-tested against the
-                  presymptomatic weight $w$, crowding $\mu$, $\pi_{\mathrm{work}}$,
-                  baseline retention $p$, and the number of Erlang sub-stages ---
-                  qualitatively stable throughout.
-        \end{itemize}
-        \column{0.5\textwidth}
-        \centering
-        \includegraphics[width=\textwidth]{sens_S3_R0_transition_heatmap}
     \end{columns}
 \end{frame}
 
@@ -583,14 +481,10 @@
         \item School-based measures are more effective and more certain across all
               seasons and age groups, and carry no household-spillover hazard.
         \item Sick leave's population benefit is small and not robustly established.
-              This limitation follows directly from two data-grounded features:
-              presymptomatic transmission ($w=0.22$) that no symptom-triggered
-              policy can touch, and household spillover that re-creates at home part
-              of what was removed at work.
-        \item Sick leave's benefit is the fragile difference between transmission
-              removed at work and transmission re-created at home --- which is why
-              adding presymptomatic transmission shrank it while barely touching
-              school absence.
+              This follows from \textbf{household spillover}: much of the
+              transmission removed at work is re-created at home.
+        \item Its benefit is the fragile difference between transmission removed at
+              work and transmission re-created at home.
     \end{itemize}
 \end{frame}
 
@@ -623,12 +517,16 @@
 
 \begin{frame}\frametitle{Limitations}
     \begin{itemize}
-        \item Single aggregated Seoul Capital Area (no spatial structure); single
-              dominant wave per season.
         \item Presymptomatic weight taken from influenza~A; influenza~B shows no
               clear presymptomatic transmission (an A-based weight is conservative).
-        \item Crowding $\kappa$ derived from time-use data, not a contact-diary of
-              sick individuals; swept in sensitivity.
+        \item Crowding $\kappa$ derived from time-use data, not a contact diary of
+              sick individuals; both $\kappa$ and the baseline retention $p$ are
+              swept in sensitivity.
+        \item The contact survey was conducted near the Lunar New Year holiday
+              (weekdays close to the holiday), so the contact matrices may carry a
+              holiday-related bias.
+        \item Absence is modelled over the entire infectious period, which may
+              differ from actual absence durations.
         \item Sick leave's near-zero effect makes its exact magnitude and count
               ratios imprecise --- we emphasize direction and certainty.
     \end{itemize}

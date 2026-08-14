@@ -239,3 +239,31 @@ work π=0.11 (0.349 기준) → sick_leave 음수. work π ≥ 0.25 면 양수.
 3. **SEM-3** 초기조건 (TODO-1/2 와 통합)
 4. **SEM-4** 발표 업데이트 (v4 에서 처리 중)
 5. **SEM-5** 기록만
+
+## VAX-1: 백신 target coverage — 논문/발표 표가 연령별 값을 반영 못함 (2026-08-04)
+
+### 확인 결과
+- **코드는 이미 연령별 벡터** (`src/kt_epimodel_hira/model/parameters.py`
+  `_default_annual_coverage()`), 주석 "(잠정)":
+  - 0–9세: **0.75**
+  - 10–19세: **0.40**
+  - 20–64세: **0.30**
+  - 70+: **0.82**
+  - (한국 인플루엔자 무료접종 정책상 소아·고령 높음, 성인 낮음 — 형태는 타당)
+- `VaccinationParameters.annual_coverage`는 shape=(15,) 벡터를 강제 (스칼라 아님).
+  즉 모델 자체는 연령별 커버리지로 계산됨.
+
+### 문제
+- **논문 `paper/main.tex` fixed-constants 표**에 `C = 0.30` **상수**로 기재
+  (실제 코드와 불일치). 발표 `presentation.tex` 표도 동일하게 `C=0.30`.
+- 독자가 "전 연령 30% 균일 접종"으로 오해할 소지.
+
+### 수정할 일 (TODO)
+1. `_default_annual_coverage()` 값이 **확정인지** 확인 — 주석 "(잠정)".
+   출처 명시 필요 (KDCA 접종통계 / KOSIS? 소아·고령 무료접종률 근거).
+2. 논문: fixed-constants 표의 `C=0.30`을 삭제하고, **age-specific vectors 표
+   (`tab:param_age`)에 coverage 열 추가** 하거나 별도 문장으로 연령별 값 명시.
+3. 발표: fixed-constants 슬라이드의 `C=0.30`도 동일하게 수정
+   (또는 "age-specific, 0.30–0.82" 식으로).
+4. 확정값 반영 후 재fit 필요 여부 판단 (커버리지가 이미 벡터로 fit에 들어갔다면
+   재fit 불필요, 표기만 수정).
