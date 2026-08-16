@@ -50,11 +50,21 @@ import final_pipeline_confirmed as F
 REPO = Path(__file__).resolve().parent.parent
 _NRAW = os.environ.get("NUTS_RAW_PATH", "outputs/eda/nuts_v4_full_raw.npz")
 _NEXT = os.environ.get("NUTS_EXT_PATH", "outputs/eda/nuts_v4_full_extended.npz")
-NUTS_RAW = np.load(REPO / _NRAW)
-NUTS_EXT = np.load(REPO / _NEXT)
-PI_MERGED = np.concatenate([NUTS_RAW["pi"], NUTS_EXT["pi"]], axis=0)
-LOG_R0_MERGED = np.concatenate([NUTS_RAW["log_R0"], NUTS_EXT["log_R0"]], axis=0)
-PHI_NB_MERGED = np.concatenate([NUTS_RAW["phi_nb"], NUTS_EXT["phi_nb"]], axis=0)
+# legacy v4 posterior npz — outputs/ is gitignored so this may be absent on a
+# given machine. Only posterior_predictive()/fig_F12 need it; _fig_F7_from_curves
+# (redraws fit_total from the outputs/eda/fit_total_curves.json cache) does not,
+# so guard the load instead of failing the whole module at import time.
+try:
+    NUTS_RAW = np.load(REPO / _NRAW)
+    NUTS_EXT = np.load(REPO / _NEXT)
+    PI_MERGED = np.concatenate([NUTS_RAW["pi"], NUTS_EXT["pi"]], axis=0)
+    LOG_R0_MERGED = np.concatenate([NUTS_RAW["log_R0"], NUTS_EXT["log_R0"]], axis=0)
+    PHI_NB_MERGED = np.concatenate([NUTS_RAW["phi_nb"], NUTS_EXT["phi_nb"]], axis=0)
+except FileNotFoundError as _e:
+    print(f"[paper_figures_extra] legacy v4 posterior npz not found ({_e}); "
+          f"PI_MERGED/LOG_R0_MERGED/PHI_NB_MERGED unavailable "
+          f"(posterior_predictive()/fig_F12 need them, fit_total redraw does not)")
+    PI_MERGED = LOG_R0_MERGED = PHI_NB_MERGED = None
 
 PHI = np.array(F.PHI); BASE = 0.6
 GAMMA_15 = np.array([0.40,0.40,0.25,0.18]+[0.18]*9+[0.25,0.25])
@@ -199,31 +209,33 @@ def posterior_predictive(C, n_samples=N_POST, seed=SEED):
 # ═══════════════════════════════════════════════════════════════════════════
 # F7 — fit_total (시즌별 관측 vs 모델 총계)
 # ═══════════════════════════════════════════════════════════════════════════
-def fig_F7(preds, obs, phi_nb_s=None):
-    """Weekly total (all-age sum): posterior mean line + observed points.
-    CI band 제거 — mean 곡선과 관측점만 표시."""
+def _fig_F7_from_curves(cache: dict):
+    """Draw fit_total from a {season: {mean, obs}} curve cache.
+
+    Colour-free by design: season is already distinguished by panel
+    position and panel title, so the fit line and title are plain black
+    (readable in greyscale print) in all three panels identically. Only
+    the observed-NHIS marker keeps its fixed neutral grey (COL_ZERO) — it
+    was never season-coloured. No line style / marker shape variation is
+    used to encode season; that would be redundant with panel position
+    and would invite misreading the style as meaningful.
+    """
     fig, axes = plt.subplots(1, 3, figsize=(W_DOUBLE, 2.8),
                               constrained_layout=True, sharey=False)
-    _cache = {}                             # season → {mean, obs} 곡선 캐시
     for k, s in enumerate(SEASONS):
         ax = axes[k]
-        pr = preds[s].sum(axis=2)          # (N, 52) posterior mean per sample
-        o = obs[s].sum(axis=1)              # (52,)
-        wks = np.arange(pr.shape[1])
-        mean_pr = pr.mean(axis=0)
-        _cache[s] = {"mean": mean_pr.tolist(), "obs": o.tolist()}
-        col = COL_SEASON[s]
-        ax.plot(wks, mean_pr, color=col, lw=1.6,
+        mean_pr = np.asarray(cache[s]["mean"])
+        o = np.asarray(cache[s]["obs"])
+        wks = np.arange(mean_pr.shape[0])
+        ax.plot(wks, mean_pr, color="black", lw=1.6,
                 label="Posterior mean" if k == 0 else None)
         ax.plot(wks[:len(o)], o, "o", color=COL_ZERO, ms=2.5, alpha=0.75,
                 label="Observed (NHIS)" if k == 0 else None)
         ax.set_xlabel("Epidemic week")
         if k == 0:
             ax.set_ylabel("Weekly incidence (NHIS)")
-        # 연도는 패널 제목으로 (곡선과 겹치지 않게)
-        ax.set_title(s, color=col, fontsize=9, fontweight="bold")
+        ax.set_title(s, color="black", fontsize=9, fontweight="bold")
     # 범례: 그림 아래 중앙 (3 패널 공통 항목, 곡선과 절대 겹침 없음)
-    # "Posterior mean"은 검정 단일 선 (선이 하나뿐이라 season 색 매핑 불필요).
     from matplotlib.lines import Line2D as _L2D
     _handles = [
         _L2D([0], [0], color="black", lw=1.6, label="Posterior mean"),
@@ -233,6 +245,18 @@ def fig_F7(preds, obs, phi_nb_s=None):
     fig.legend(handles=_handles, loc="lower center",
                 bbox_to_anchor=(0.5, -0.13), ncol=2, frameon=False,
                 fontsize=8, handlelength=2.2, columnspacing=2.2)
+    return savefig(fig, "fit_total")
+
+
+def fig_F7(preds, obs, phi_nb_s=None):
+    """Weekly total (all-age sum): posterior mean line + observed points.
+    CI band 제거 — mean 곡선과 관측점만 표시."""
+    _cache = {}                             # season → {mean, obs} 곡선 캐시
+    for s in SEASONS:
+        pr = preds[s].sum(axis=2)          # (N, 52) posterior mean per sample
+        o = obs[s].sum(axis=1)              # (52,)
+        mean_pr = pr.mean(axis=0)
+        _cache[s] = {"mean": mean_pr.tolist(), "obs": o.tolist()}
     # 곡선 캐시 저장 → 이후 순수 시각화(legend/색/위치) 조정은 재적합 없이 가능
     try:
         import json as _json
@@ -240,7 +264,7 @@ def fig_F7(preds, obs, phi_nb_s=None):
             _json.dumps(_cache))
     except Exception as _e:
         print(f"  [warn] fit_total curve cache 저장 실패: {_e}")
-    savefig(fig, "fit_total")
+    return _fig_F7_from_curves(_cache)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
