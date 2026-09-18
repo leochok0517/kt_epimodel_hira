@@ -27,9 +27,15 @@ claude
 | 07 | `07_monday_report.md` | 주말 무인 실행 결과 정리 | 주말 체인 |
 | 08 | `08_seasonality_offset.md` | 2015-16 misfit 이 고정 캘린더 때문인지 | 07 |
 | 09 | `09_theta_reimplementation.md` | θ 재구현 + θ·κ 스윕 | 4시즌 피팅 |
+| 10 | `10_v6_recompute.md` | v6 원고에 남은 v5 숫자·그림 재계산 | 09 |
+| 11 | `11_supplement_figures.md` | Supplement 잔여 그림 8개 4시즌 재생성 | 10 |
 | 99 | `99_conventions.md` | 매 세션 공통 주의사항 | — |
 
 01 → 03 → 04 → 05 → 06 이 주 경로. 02 는 병렬로 언제든.
+
+06 은 이제 Cowork 세션에서 직접 쓴다 (Results·Discussion 초고 완료).
+10 은 그 초고에 `% TODO(v6)` 로 남은 6곳을 채우기 위한 계산 전용 작업이며,
+**원고 파일을 편집하지 않는다.**
 
 ## 무인 실행 (주말·야간)
 
