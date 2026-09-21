@@ -59,7 +59,7 @@ for k, s in enumerate(SEASONS):
             ax.text(j, i, f"{M[i, j]:+.1f}", ha="center", va="center",
                     fontsize=5.5, color=col)
     panel_label(ax, "ABCD"[k])
-    ax.set_title(s, fontsize=8.5, pad=3, color=COL_SEASON_FLUA4[s])
+    ax.set_title(s, fontsize=8.5, pad=3)
 
 ax = axes[4]
 sign_map = np.zeros((len(PIW), len(KAP)), dtype=int)
@@ -87,9 +87,7 @@ ax.set_title("4-season sign", fontsize=8.5, pad=3)
 cbar = fig.colorbar(im, ax=axes[:4], location="right", shrink=0.85,
                      fraction=0.03, pad=0.01)
 cbar.set_label("Sick-leave averted (%)", fontsize=8)
-fig.text(0.5, -0.03,
-          "Term window; positive = averted, negative = transferred. "
-          "Panel E: '+/-' = 4/4 seasons agree, '·' = mixed.",
-          ha="center", fontsize=7, color=COL_ZERO)
+# The explanatory note that used to sit under the panels now lives in the
+# manuscript caption (v3 review).
 savefig(fig, "sens_S1_piwork_kappa_heatmap")
 print("saved sens_S1_piwork_kappa_heatmap (fluA4)")
