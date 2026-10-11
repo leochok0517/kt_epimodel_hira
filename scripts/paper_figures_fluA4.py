@@ -29,6 +29,12 @@ from figstyle import (
 REPO = Path(__file__).resolve().parent.parent
 SEASONS = ["2016-2017", "2017-2018", "2018-2019", "2019-2020"]
 COL_SEASON_FLUA4 = dict(COL_SEASON, **{"2018-2019": "#E69F00"})
+# Okabe-Ito, one hue per contact channel. Panel A of F6 previously drew
+# home/school/other in a single blue, which the v3 review flagged.
+COL_CHANNEL = {"home": "#0072B2", "work": "#E69F00",
+               "school": "#009E73", "other": "#999999"}
+# Panel C: one colour per NUTS chain, stated in the figure caption.
+COL_CHAIN = ["#0072B2", "#E69F00", "#009E73", "#CC79A7"]
 
 POL = json.loads((REPO / "outputs/fluA/policy_posterior_fluA4.json").read_text())
 NUTS = np.load(REPO / "outputs/eda/nuts_fluA4_raw.npz", allow_pickle=True)
@@ -146,52 +152,51 @@ def fig_F4():
 # F5 — holiday (child Delta-attack, school-term vs winter-break, 4 seasons)
 # ═══════════════════════════════════════════════════════════════════════════
 def fig_F5():
-    fig, ax = plt.subplots(figsize=(W_DOUBLE * 1.0, 3.4), constrained_layout=True)
+    """One subplot per child age band; seasons on the x axis, term vs break
+    as circle vs square. Replaces the single crowded panel (24 markers on one
+    axis) that the v3 review flagged as unreadable."""
     child_ages = ["0-5", "6-11", "12-17"]
-    xs = np.arange(len(child_ages))
-    dx = 0.10
+    fig, axes = plt.subplots(1, 3, figsize=(W_DOUBLE, 2.9), sharey=True,
+                              constrained_layout=True)
+    xs = np.arange(len(SEASONS))
+    dx = 0.17
 
     def _key(pol_s, win):
         if win == "term":
             return pol_s.get("sick_d_by_age_term") or pol_s.get("sick_by_age", {})
         return pol_s.get("sick_d_by_age_vac", {})
 
-    n = len(SEASONS)
-    for j, s in enumerate(SEASONS):
-        col = COL_SEASON_FLUA4[s]
-        base_off = (j - (n - 1) / 2.0) * 0.20
-        for wi, (win, mk) in enumerate([("term", "o"), ("vac", "s")]):
-            src = _key(POL[s], win)
-            offs = base_off + (wi - 0.5) * dx
-            for i, ag in enumerate(child_ages):
-                v = src.get(ag, {})
+    for ax, ag in zip(axes, child_ages):
+        for j, s in enumerate(SEASONS):
+            col = COL_SEASON_FLUA4[s]
+            for wi, (win, mk) in enumerate([("term", "o"), ("vac", "s")]):
+                v = _key(POL[s], win).get(ag, {})
                 if not v:
                     continue
                 sig = is_sig(v["q05"], v["q95"])
                 mean_av = -v["mean"]
                 yerr = [[v["q95"] - v["mean"]], [v["mean"] - v["q05"]]]
-                ax.errorbar([xs[i] + offs], [mean_av], yerr=yerr,
+                ax.errorbar([xs[j] + (wi - 0.5) * 2 * dx], [mean_av], yerr=yerr,
                             color=col, lw=1.0, capsize=2, zorder=3,
-                            marker=mk, markersize=6,
+                            marker=mk, markersize=5.5,
                             markerfacecolor=(col if sig else "white"),
                             markeredgecolor=col, markeredgewidth=1.2)
-        ax.plot([], [], color=col, marker="o", ls="", label=s, markersize=5)
+        zero_line(ax)
+        ax.set_xlim(-0.55, len(SEASONS) - 0.45)
+        ax.set_xticks(xs)
+        ax.set_xticklabels([s[2:4] + "-" + s[7:9] for s in SEASONS],
+                            fontsize=7, rotation=45, ha="right")
+        ax.set_xlabel("Season", fontsize=8.5)
+        ax.set_title(f"{ag} years", fontsize=9)
+    axes[0].set_ylabel(r"Averted attack rate (%p), sick leave")
     win_handles = [
         Line2D([0], [0], marker="o", color=COL_ZERO, ls="",
-                 markersize=6, label="School term (days 70-113)"),
+                 markersize=5.5, label="School term"),
         Line2D([0], [0], marker="s", color=COL_ZERO, ls="",
-                 markersize=6, label="Winter break (days 113-183)"),
+                 markersize=5.5, label="Winter break"),
     ]
-    zero_line(ax)
-    ax.set_xticks(xs); ax.set_xticklabels(child_ages)
-    ax.set_xlabel("Age group (children)")
-    ax.set_ylabel(r"Averted attack rate (%p), sick leave")
-    leg1 = ax.legend(title="Season", frameon=False, fontsize=7.5,
-                      title_fontsize=8, loc="upper left",
-                      bbox_to_anchor=(1.01, 1.0))
-    ax.add_artist(leg1)
-    ax.legend(handles=win_handles, frameon=False, fontsize=7.5,
-               loc="lower left", bbox_to_anchor=(1.01, 0.0))
+    axes[0].legend(handles=win_handles, frameon=False, fontsize=7.5,
+                    loc="lower left", handletextpad=0.4, borderpad=0.1)
     savefig(fig, "holiday")
 
 
@@ -199,7 +204,7 @@ def fig_F5():
 # F6 — nuts_posterior (pi 4-channel + R_peak,s 4 seasons + pi_work trace)
 # ═══════════════════════════════════════════════════════════════════════════
 def fig_F6():
-    fig, axes = plt.subplots(1, 3, figsize=(W_DOUBLE, 3.2),
+    fig, axes = plt.subplots(1, 3, figsize=(W_DOUBLE, 2.25),
                               constrained_layout=True,
                               gridspec_kw=dict(width_ratios=[1.2, 1.0, 1.3]))
 
@@ -209,13 +214,13 @@ def fig_F6():
         arr = PI_MERGED[:, i]
         m = arr.mean()
         q025, q975 = np.quantile(arr, [0.025, 0.975])
-        col = COL_SICK if ch == "work" else COL_SCHOOL
+        col = COL_CHANNEL[ch]
         xerr = [[m - q025], [q975 - m]]
         ax.errorbar([m], [i], xerr=xerr, color=col, lw=1.2, capsize=3,
                     marker="o", markersize=6, markerfacecolor=col,
                     markeredgecolor=col)
     ax.set_yticks(ys); ax.set_yticklabels(CHANNELS)
-    ax.invert_yaxis()
+    ax.set_ylim(len(CHANNELS) - 0.45, -0.55)
     ax.set_xlabel(r"$\pi$ (channel share)")
     ax.set_xlim(0, 0.6)
     panel_label(ax, "A")
@@ -231,14 +236,15 @@ def fig_F6():
                     marker="o", markersize=6, markerfacecolor=col,
                     markeredgecolor=col)
     ax.set_yticks(range(len(SEASONS))); ax.set_yticklabels(SEASONS)
-    ax.invert_yaxis()
+    ax.set_ylim(len(SEASONS) - 0.45, -0.55)
     ax.set_xlabel(r"$R_{\mathrm{peak},s}$")
     ax.set_xlim(1.9, 2.5)
     panel_label(ax, "B")
 
     ax = axes[2]
     for ch in range(PI_CHAINED.shape[0]):
-        ax.plot(PI_CHAINED[ch, :, 1], lw=0.4, alpha=0.6)
+        ax.plot(PI_CHAINED[ch, :, 1], lw=0.4, alpha=0.6,
+                color=COL_CHAIN[ch % len(COL_CHAIN)])
     ax.set_xlabel("Draw"); ax.set_ylabel(r"$\pi_{\mathrm{work}}$")
     panel_label(ax, "C")
 
