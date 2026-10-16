@@ -51,3 +51,7 @@ disown
 확인하므로, 보정이 풀린 상태로 몇 시간짜리 피팅이 돌아가는 일은 없다. 단계별 게이트가 있어
 중간에 죽어도 `outputs/fluA/REPORT.md` 는 항상 생성된다.
 끝나고 나서는 `07_monday_report.md` 로 해석을 붙인다.
+
+## 단발 작업
+
+- `17_fig8_arial_push.md` — Figure 8 을 Mac 에서 Arial 로 재생성, 원고 폴더 복사, 커밋·푸시 (2026-10-16)
