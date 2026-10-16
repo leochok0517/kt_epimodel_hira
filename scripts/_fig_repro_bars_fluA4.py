@@ -1,6 +1,8 @@
 """(A) channel R_c / (B) age R_b bars for fluA4, representative season
 2019-2020 (reproduction_numbers_fluA4_2019-2020.json, static block).
 
+Panel titles removed, A/B letters top-left (2026-10-15, co-author v7 p.22).
+
 Copy of _fig_repro_bars.py with two changes: input JSON path, and the pi
 share values read from the JSON's static.pi_share_pct (added in
 reproduction_analysis_fluA4.py) instead of hardcoded v5 numbers.
@@ -36,12 +38,10 @@ for i, c in enumerate(chans):
     if c == "home":
         continue  # ratio 1.0x is self-evident and overlaps the legend
     ratio = rc[i] / ps[i]
-    axA.text(x[i] + w/2, rc[i] + rc_hi[i] + 1.2, f"{ratio:.1f}$\\times$",
+    axA.text(x[i] + w/2, rc[i] + rc_hi[i] + 1.2, (f"{ratio:.2f}" if ratio < 1 else f"{ratio:.1f}") + r"$\times$",
              ha="center", fontsize=8, fontweight="bold", color=COL_SCHOOL)
 axA.set_xticks(x); axA.set_xticklabels(chans)
 axA.set_ylabel("Share of total (%)")
-axA.set_title(r"(A) Channel contribution to $R_0$ vs share",
-              fontsize=9.5, fontweight="bold")
 axA.legend(frameon=False, fontsize=7.5, loc="upper right")
 axA.set_ylim(0, max(max(ps), max(rc)) * 1.25)
 
@@ -60,9 +60,12 @@ for i, a in enumerate(ages):
 axB.set_xticks(xb); axB.set_xticklabels(ages, rotation=0, fontsize=8)
 axB.set_ylabel(r"Secondary infections generated $R_b$")
 child = sum(shr[:3])
-axB.set_title(rf"(B) Age contribution (children 0--17: {child:.0f}%)",
-              fontsize=9.5, fontweight="bold")
 axB.set_ylim(0, max(rb[i] + rb_hi[i] for i in range(len(ages))) * 1.18)
+
+# panel letters only, no titles (co-author v7 comment, p.22)
+for ax, lab in ((axA, "A"), (axB, "B")):
+    ax.text(-0.14, 1.04, lab, transform=ax.transAxes,
+            fontsize=12, fontweight="bold", va="bottom", ha="left")
 
 savefig(fig, "repro_bars")
 print(f"saved repro_bars (fluA4); children share = {child:.0f}%, school R/pi = {rc[2]/ps[2]:.1f}x")
