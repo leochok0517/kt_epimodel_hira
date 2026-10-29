@@ -18,7 +18,8 @@ from figstyle import savefig, COL_SICK, COL_SCHOOL, COL_ZERO, W_DOUBLE
 
 FITDATA_PATH = REPO / "outputs/fluA/fit_total_curves_fluA4.json"
 FITDATA = json.load(open(FITDATA_PATH)) if FITDATA_PATH.exists() else {}
-CH_COL = {"home": "#555555", "work": "#55A868", "school": COL_SCHOOL, "other": "#8172B3"}
+# Channel colours match Figure 4A (paper_figures_fluA4.COL_CHANNEL), co-author J. Lee 2026-10-28.
+CH_COL = {"home": "#0072B2", "work": "#E69F00", "school": "#009E73", "other": "#999999"}
 SC = {"baseline": (COL_ZERO, "Baseline"),
       "sick": (COL_SICK, "Sick leave"),
       "school": (COL_SCHOOL, "School absence")}
@@ -79,7 +80,7 @@ def make_fig(json_path, out_name):
     ax1.set_ylim(0, ylim_top)
     ax1.legend(frameon=False, fontsize=8, loc="lower left")
     ax1r.legend(frameon=False, fontsize=7.5, loc="upper right")
-    ax1.set_title(rf"$R_e(t)$ and observed incidence by scenario ({season})",
+    ax1.set_title(rf"$R_e(t)$ and model incidence by scenario ({season})",
                   fontsize=10, fontweight="bold")
     # ---- Panel B ----
     base = Rec["baseline"]
@@ -89,7 +90,7 @@ def make_fig(json_path, out_name):
     ax2.set_xlabel("Season day (0 = Sep 1)")
     ax2.set_ylabel(r"Channel $R_e^{c}(t)$")
     ax2.legend(frameon=False, fontsize=8, ncol=4, loc="upper right")
-    ax2.set_title("Baseline channel components --- the school term collapses in the winter break",
+    ax2.set_title("Baseline channel components: the school channel falls in the winter-break period",
                   fontsize=10, fontweight="bold")
     ax2.set_xlim(0, 290)
     savefig(fig, out_name)

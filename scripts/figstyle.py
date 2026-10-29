@@ -23,7 +23,7 @@ mpl.rcParams.update({
     "figure.dpi": 150, "savefig.dpi": 300,
     "pdf.fonttype": 42, "ps.fonttype": 42,             # 폰트 임베딩 (제출 필수)
     "font.family": "sans-serif",
-    "font.sans-serif": ["Arial", "Helvetica", "DejaVu Sans"],
+    "font.sans-serif": ["Arial", "Helvetica", "Liberation Sans", "DejaVu Sans"],
     "font.size": 9, "axes.titlesize": 10, "axes.labelsize": 9,
     "xtick.labelsize": 8, "ytick.labelsize": 8, "legend.fontsize": 8,
     "axes.spines.top": False, "axes.spines.right": False,

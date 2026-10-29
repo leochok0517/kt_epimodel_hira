@@ -25,13 +25,16 @@ fig, (axA, axB) = plt.subplots(1, 2, figsize=(W_DOUBLE, 3.2), constrained_layout
 
 # ---- (A) channel R_c vs pi share ----
 chans = ["home", "work", "school", "other"]
-pi_share = st["pi_share_pct"]
+# Channel share pi_c = posterior mean over ALL draws (Table 3), not the 100-draw
+# subsample mean stored in static.pi_share_pct (co-author J. Lee 2026-10-28, v7 p.16).
+_pi_all = np.asarray(np.load(REPO / "outputs/eda/nuts_fluA4_raw.npz")["pi"]).reshape(-1, 4)
+pi_share = {c: 100.0 * float(_pi_all[:, i].mean()) for i, c in enumerate(["home", "work", "school", "other"])}
 rc = [st["R_c_share_pct"][c]["mean"] for c in chans]
 rc_lo = [st["R_c_share_pct"][c]["mean"] - st["R_c_share_pct"][c]["q05"] for c in chans]
 rc_hi = [st["R_c_share_pct"][c]["q95"] - st["R_c_share_pct"][c]["mean"] for c in chans]
 ps = [pi_share[c] for c in chans]
 x = np.arange(len(chans)); w = 0.38
-axA.bar(x - w/2, ps, w, color="#C7C7C7", label=r"transmissibility share $\pi_c$")
+axA.bar(x - w/2, ps, w, color="#C7C7C7", label=r"channel share $\pi_c$")
 axA.bar(x + w/2, rc, w, yerr=[rc_lo, rc_hi], capsize=3,
         color=COL_SCHOOL, label=r"reproduction share $R_c/R_0$")
 for i, c in enumerate(chans):
